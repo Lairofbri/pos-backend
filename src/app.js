@@ -12,8 +12,9 @@ const { noEncontrado, errorServidor } = require('./utils/response');
 // ── Importar rutas de módulos ──
 const authRoutes      = require('./modules/auth/auth.routes');
 const productosRoutes = require('./modules/productos/productos.routes');
+const posRoutes       = require('./modules/pos/pos.routes');
 // Aquí se irán agregando los demás módulos:
-// const posRoutes = require('./modules/pos/pos.routes');
+// const cajasRoutes = require('./modules/cajas/cajas.routes');
 
 const app = express();
 
@@ -84,7 +85,8 @@ app.get('/health', (_req, res) => {
 // ─────────────────────────────────────────────
 app.use('/api', authRoutes);
 app.use('/api', productosRoutes);
-// app.use('/api', posRoutes);
+app.use('/api', posRoutes);
+// app.use('/api', cajasRoutes);
 
 // ─────────────────────────────────────────────
 // 404 — Ruta no encontrada
