@@ -10,10 +10,10 @@ const logger = require('./utils/logger');
 const { noEncontrado, errorServidor } = require('./utils/response');
 
 // ── Importar rutas de módulos ──
-const authRoutes = require('./modules/auth/auth.routes');
+const authRoutes      = require('./modules/auth/auth.routes');
+const productosRoutes = require('./modules/productos/productos.routes');
 // Aquí se irán agregando los demás módulos:
-// const productosRoutes = require('./modules/productos/productos.routes');
-// const posRoutes       = require('./modules/pos/pos.routes');
+// const posRoutes = require('./modules/pos/pos.routes');
 
 const app = express();
 
@@ -83,7 +83,7 @@ app.get('/health', (_req, res) => {
 // Rutas de la API
 // ─────────────────────────────────────────────
 app.use('/api', authRoutes);
-// app.use('/api', productosRoutes);
+app.use('/api', productosRoutes);
 // app.use('/api', posRoutes);
 
 // ─────────────────────────────────────────────
