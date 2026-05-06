@@ -1,6 +1,6 @@
 // src/modules/auth/auth.controller.js
 // Maneja los requests HTTP, valida el body y llama al service
-// No contiene lógica de negocio — solo orquesta
+// Principio S (SOLID): solo orquesta, no opera datos ni responde directamente
 
 const authService = require('./auth.service');
 const {
@@ -12,16 +12,17 @@ const {
   crearUsuarioSchema,
   actualizarUsuarioSchema,
 } = require('./auth.schema');
-const { exito, creado, error, noAutenticado, sinPermiso, errorServidor } = require('../../utils/response');
+const { exito, creado, error, noAutenticado, errorServidor } = require('../../utils/response');
+const { esUuidValido, validarUuidQuery }                     = require('../../middlewares/uuid.middleware');
 const logger = require('../../utils/logger');
 
-// Helper para manejar errores del service de forma uniforme
+// ─────────────────────────────────────────────
+// Helper: manejo de errores del service
+// ─────────────────────────────────────────────
 const manejarError = (res, err) => {
-  // Si el service lanzó un error controlado {status, mensaje}
   if (err.status && err.mensaje) {
     return error(res, err.mensaje, err.status);
   }
-  // Error inesperado
   logger.error('Error no controlado en auth', { error: err.message, stack: err.stack });
   return errorServidor(res);
 };
@@ -32,15 +33,10 @@ const manejarError = (res, err) => {
 // ─────────────────────────────────────────────
 const loginEmail = async (req, res) => {
   const { error: validacionError, value } = loginEmailSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
-  }
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
-    const resultado = await authService.loginEmail({
-      ...value,
-      ip: req.ip,
-    });
+    const resultado = await authService.loginEmail({ ...value, ip: req.ip });
     return exito(res, resultado, 'Sesión iniciada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
@@ -50,26 +46,29 @@ const loginEmail = async (req, res) => {
 // ─────────────────────────────────────────────
 // POST /auth/login-pin
 // Login con PIN (estaciones POS)
-// Header requerido: X-Tenant-Id
+// Header requerido: X-Tenant-Id (debe ser UUID válido)
 // ─────────────────────────────────────────────
 const loginPin = async (req, res) => {
   const tenantId = req.headers['x-tenant-id'];
+
   if (!tenantId) {
     return error(res, 'Header X-Tenant-Id requerido.', 400);
   }
+  // Validar que el tenant_id sea un UUID válido
+  if (!esUuidValido(tenantId)) {
+    return error(res, 'El header X-Tenant-Id no tiene un formato UUID válido.', 400);
+  }
 
   const { error: validacionError, value } = loginPinSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
-  }
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
     const resultado = await authService.loginPin({
       tenantId,
-      usuarioId: value.usuario_id,
-      pin: value.pin,
+      usuarioId:   value.usuario_id,
+      pin:         value.pin,
       dispositivo: value.dispositivo,
-      ip: req.ip,
+      ip:          req.ip,
     });
     return exito(res, resultado, 'Sesión iniciada exitosamente.');
   } catch (err) {
@@ -79,18 +78,13 @@ const loginPin = async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /auth/refresh
-// Renovar access token usando refresh token
 // ─────────────────────────────────────────────
 const refresh = async (req, res) => {
   const { error: validacionError, value } = refreshTokenSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
-  }
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
-    const resultado = await authService.refreshAccessToken({
-      refreshToken: value.refresh_token,
-    });
+    const resultado = await authService.refreshAccessToken({ refreshToken: value.refresh_token });
     return exito(res, resultado, 'Token renovado exitosamente.');
   } catch (err) {
     return manejarError(res, err);
@@ -99,7 +93,6 @@ const refresh = async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /auth/logout
-// Invalidar sesión actual
 // ─────────────────────────────────────────────
 const logout = async (req, res) => {
   try {
@@ -112,22 +105,17 @@ const logout = async (req, res) => {
 
 // ─────────────────────────────────────────────
 // GET /auth/me
-// Datos del usuario autenticado actual
 // ─────────────────────────────────────────────
 const me = async (req, res) => {
-  // req.usuario lo inyecta el middleware de autenticación
   return exito(res, req.usuario, 'Datos del usuario actual.');
 };
 
 // ─────────────────────────────────────────────
 // PUT /auth/cambiar-pin
-// El usuario autenticado cambia su propio PIN
 // ─────────────────────────────────────────────
 const cambiarPin = async (req, res) => {
   const { error: validacionError, value } = cambiarPinSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
-  }
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
     await authService.cambiarPin({
@@ -144,20 +132,17 @@ const cambiarPin = async (req, res) => {
 
 // ─────────────────────────────────────────────
 // PUT /auth/cambiar-password
-// El usuario autenticado cambia su propio password
 // ─────────────────────────────────────────────
 const cambiarPassword = async (req, res) => {
   const { error: validacionError, value } = cambiarPasswordSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
-  }
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
     await authService.cambiarPassword({
-      usuarioId:       req.usuario.id,
-      tenantId:        req.usuario.tenant_id,
-      passwordActual:  value.password_actual,
-      passwordNuevo:   value.password_nuevo,
+      usuarioId:      req.usuario.id,
+      tenantId:       req.usuario.tenant_id,
+      passwordActual: value.password_actual,
+      passwordNuevo:  value.password_nuevo,
     });
     return exito(res, null, 'Contraseña actualizada exitosamente.');
   } catch (err) {
@@ -166,30 +151,18 @@ const cambiarPassword = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
-// GET /usuarios
-// Listar todos los usuarios del tenant
-// Solo administrador
-// ─────────────────────────────────────────────
-const listarUsuarios = async (req, res) => {
-  try {
-    const usuarios = await authService.listarUsuarios({
-      tenantId: req.usuario.tenant_id,
-    });
-    return exito(res, usuarios);
-  } catch (err) {
-    return manejarError(res, err);
-  }
-};
-
-// ─────────────────────────────────────────────
 // GET /usuarios/pin-list
-// Lista simplificada para pantalla de selección de PIN en la estación
-// Solo nombre, apellido e id — sin datos sensibles
+// Lista para pantalla de selección de PIN
+// Header requerido: X-Tenant-Id (debe ser UUID válido)
 // ─────────────────────────────────────────────
 const listarUsuariosParaPin = async (req, res) => {
   const tenantId = req.headers['x-tenant-id'];
+
   if (!tenantId) {
     return error(res, 'Header X-Tenant-Id requerido.', 400);
+  }
+  if (!esUuidValido(tenantId)) {
+    return error(res, 'El header X-Tenant-Id no tiene un formato UUID válido.', 400);
   }
 
   try {
@@ -201,11 +174,26 @@ const listarUsuariosParaPin = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
+// GET /usuarios
+// ─────────────────────────────────────────────
+const listarUsuarios = async (req, res) => {
+  try {
+    const usuarios = await authService.listarUsuarios({ tenantId: req.usuario.tenant_id });
+    return exito(res, usuarios);
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
+// ─────────────────────────────────────────────
 // GET /usuarios/:id
-// Obtener un usuario específico
-// Solo administrador
+// Valida UUID antes de consultar
 // ─────────────────────────────────────────────
 const obtenerUsuario = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de usuario no tiene un formato UUID válido.', 400);
+  }
+
   try {
     const usuario = await authService.obtenerUsuario({
       tenantId:  req.usuario.tenant_id,
@@ -219,19 +207,15 @@ const obtenerUsuario = async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /usuarios
-// Crear nuevo usuario
-// Solo administrador
 // ─────────────────────────────────────────────
 const crearUsuario = async (req, res) => {
   const { error: validacionError, value } = crearUsuarioSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
-  }
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
     const usuario = await authService.crearUsuario({
       tenantId: req.usuario.tenant_id,
-      datos: value,
+      datos:    value,
     });
     return creado(res, usuario, 'Usuario creado exitosamente.');
   } catch (err) {
@@ -241,20 +225,21 @@ const crearUsuario = async (req, res) => {
 
 // ─────────────────────────────────────────────
 // PATCH /usuarios/:id
-// Actualizar datos de un usuario
-// Solo administrador
+// Valida UUID antes de actualizar
 // ─────────────────────────────────────────────
 const actualizarUsuario = async (req, res) => {
-  const { error: validacionError, value } = actualizarUsuarioSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de usuario no tiene un formato UUID válido.', 400);
   }
+
+  const { error: validacionError, value } = actualizarUsuarioSchema.validate(req.body);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
     const usuario = await authService.actualizarUsuario({
       tenantId:  req.usuario.tenant_id,
       usuarioId: req.params.id,
-      datos: value,
+      datos:     value,
     });
     return exito(res, usuario, 'Usuario actualizado exitosamente.');
   } catch (err) {
@@ -264,15 +249,13 @@ const actualizarUsuario = async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /usuarios/:id/resetear-pin
-// El administrador resetea el PIN de otro usuario
-// Solo administrador
+// Valida UUID antes de resetear
 // ─────────────────────────────────────────────
 const resetearPin = async (req, res) => {
-  const { error: validacionError, value } = require('./auth.schema')
-    .crearUsuarioSchema.extract('pin')
-    .validate(req.body?.pin_nuevo);
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de usuario no tiene un formato UUID válido.', 400);
+  }
 
-  // Validación simple del PIN nuevo
   const pinNuevo = req.body?.pin_nuevo;
   if (!pinNuevo || !/^\d{4,6}$/.test(String(pinNuevo))) {
     return error(res, 'pin_nuevo debe tener entre 4 y 6 dígitos numéricos.', 400);
@@ -282,7 +265,7 @@ const resetearPin = async (req, res) => {
     await authService.resetearPin({
       tenantId:  req.usuario.tenant_id,
       usuarioId: req.params.id,
-      pinNuevo:  pinNuevo,
+      pinNuevo,
     });
     return exito(res, null, 'PIN reseteado exitosamente.');
   } catch (err) {

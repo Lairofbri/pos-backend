@@ -176,9 +176,9 @@ const getCajaActiva = async ({ tenantId, sucursalId = null }) => {
  * El sistema calcula la diferencia vs lo esperado
  */
 const cerrarCaja = async ({ tenantId, usuarioId, datos }) => {
-  const { monto_final, notas_cierre } = datos;
+  const { monto_final, notas_cierre, sucursal_id } = datos;
+  const caja = await obtenerCajaAbierta({ tenantId, sucursalId: sucursal_id });
 
-  const caja = await obtenerCajaAbierta({ tenantId });
   if (!caja) {
     throw { status: 404, mensaje: 'No hay ninguna caja abierta para cerrar.' };
   }
@@ -232,9 +232,10 @@ const cerrarCaja = async ({ tenantId, usuarioId, datos }) => {
  * Los ingresos se registran automáticamente al pagar órdenes
  */
 const registrarMovimiento = async ({ tenantId, usuarioId, datos }) => {
-  const { tipo, monto, motivo } = datos;
+  const { tipo, monto, motivo, sucursal_id } = datos;
+  const caja = await obtenerCajaAbierta({ tenantId, sucursalId: sucursal_id });
 
-  const caja = await obtenerCajaAbierta({ tenantId });
+
   if (!caja) {
     throw { status: 404, mensaje: 'No hay ninguna caja abierta para registrar movimientos.' };
   }

@@ -84,6 +84,19 @@ CREATE INDEX IF NOT EXISTS idx_movimientos_tenant ON movimientos_caja(tenant_id)
 CREATE INDEX IF NOT EXISTS idx_movimientos_orden  ON movimientos_caja(orden_id) WHERE orden_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_movimientos_fecha  ON movimientos_caja(caja_id, creado_en DESC);
 
+-- Enforza a nivel de BD que solo puede haber una caja abierta por tenant/sucursal
+-- Un índice único parcial solo aplica a las filas donde estado = 'abierta'
+-- Cuando la caja se cierra (estado = 'cerrada') el índice ya no aplica
+-- permitiendo abrir una nueva caja en la misma sucursal
+CREATE UNIQUE INDEX IF NOT EXISTS idx_una_caja_abierta_por_sucursal
+  ON cajas(tenant_id, sucursal_id)
+  WHERE estado = 'abierta';
+
+-- Para tenants sin sucursal definida (sucursal_id NULL)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_una_caja_abierta_sin_sucursal
+  ON cajas(tenant_id)
+  WHERE estado = 'abierta' AND sucursal_id IS NULL;
+
 -- ─────────────────────────────────────────────
 -- FIN DE MIGRACIÓN
 -- ─────────────────────────────────────────────

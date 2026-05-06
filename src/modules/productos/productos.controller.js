@@ -1,7 +1,6 @@
 // src/modules/productos/productos.controller.js
 // Orquesta los requests HTTP del módulo de productos
 // Principio S (SOLID): solo recibe, valida y responde — no opera datos
-// View en MVC: delega al service y formatea la respuesta con response.js
 
 const service = require('./productos.service');
 const {
@@ -16,9 +15,9 @@ const {
   exito,
   creado,
   error,
-  noEncontrado,
   errorServidor,
 } = require('../../utils/response');
+const { esUuidValido } = require('../../middlewares/uuid.middleware');
 const logger = require('../../utils/logger');
 
 // ─────────────────────────────────────────────
@@ -28,14 +27,10 @@ const manejarError = (res, err) => {
   if (err.status && err.mensaje) {
     return error(res, err.mensaje, err.status);
   }
-  // Error de unique constraint de PostgreSQL (nombre duplicado)
   if (err.code === '23505') {
     return error(res, 'Ya existe un registro con ese nombre.', 409);
   }
-  logger.error('Error no controlado en productos', {
-    error: err.message,
-    stack: err.stack,
-  });
+  logger.error('Error no controlado en productos', { error: err.message, stack: err.stack });
   return errorServidor(res);
 };
 
@@ -45,12 +40,13 @@ const manejarError = (res, err) => {
 
 /**
  * GET /api/categorias
- * Lista todas las categorías del tenant
- * Query param: ?todas=true para incluir inactivas (solo admin)
+ * Fix CUBIC: solo admin puede ver inactivas — verificado en código, no solo en comentario
  */
 const listarCategorias = async (req, res) => {
   try {
-    const soloActivas = req.query.todas !== 'true';
+    const esAdmin     = req.usuario.rol === 'administrador';
+    const soloActivas = !esAdmin || req.query.todas !== 'true';
+
     const categorias = await service.listarCategorias({
       tenantId: req.usuario.tenant_id,
       soloActivas,
@@ -63,9 +59,13 @@ const listarCategorias = async (req, res) => {
 
 /**
  * GET /api/categorias/:id
- * Obtiene una categoría por ID
+ * Fix CUBIC: valida UUID antes de consultar
  */
 const obtenerCategoria = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de categoría no tiene un formato UUID válido.', 400);
+  }
+
   try {
     const categoria = await service.obtenerCategoria({
       tenantId:    req.usuario.tenant_id,
@@ -79,17 +79,15 @@ const obtenerCategoria = async (req, res) => {
 
 /**
  * POST /api/categorias
- * Crea una nueva categoría
  */
 const crearCategoria = async (req, res) => {
   const { error: validacionError, value } = crearCategoriaSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
-  }
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
   try {
     const categoria = await service.crearCategoria({
       tenantId: req.usuario.tenant_id,
-      datos: value,
+      datos:    value,
     });
     return creado(res, categoria, 'Categoría creada exitosamente.');
   } catch (err) {
@@ -99,18 +97,21 @@ const crearCategoria = async (req, res) => {
 
 /**
  * PATCH /api/categorias/:id
- * Actualiza una categoría existente
+ * Fix CUBIC: valida UUID antes de actualizar
  */
 const actualizarCategoria = async (req, res) => {
-  const { error: validacionError, value } = actualizarCategoriaSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de categoría no tiene un formato UUID válido.', 400);
   }
+
+  const { error: validacionError, value } = actualizarCategoriaSchema.validate(req.body);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
   try {
     const categoria = await service.actualizarCategoria({
       tenantId:    req.usuario.tenant_id,
       categoriaId: req.params.id,
-      datos: value,
+      datos:       value,
     });
     return exito(res, categoria, 'Categoría actualizada exitosamente.');
   } catch (err) {
@@ -120,9 +121,13 @@ const actualizarCategoria = async (req, res) => {
 
 /**
  * DELETE /api/categorias/:id
- * Desactiva una categoría (soft delete)
+ * Fix CUBIC: valida UUID antes de desactivar
  */
 const desactivarCategoria = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de categoría no tiene un formato UUID válido.', 400);
+  }
+
   try {
     await service.desactivarCategoria({
       tenantId:    req.usuario.tenant_id,
@@ -139,24 +144,46 @@ const desactivarCategoria = async (req, res) => {
 // ═════════════════════════════════════════════
 
 /**
+ * GET /api/productos/alertas/stock-bajo
+ */
+const stockBajo = async (req, res) => {
+  try {
+    const productos = await service.productosStockBajo({ tenantId: req.usuario.tenant_id });
+    return exito(res, productos);
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
+/**
  * GET /api/productos
- * Lista productos con filtros opcionales
- * Query params: categoria_id, activo, busqueda, con_stock, pagina, limite
+ * Fix CUBIC: Number() + isInteger() en lugar de parseInt
  */
 const listarProductos = async (req, res) => {
-  // Validar y parsear query params
+  const paginaRaw = req.query.pagina ? Number(req.query.pagina) : 1;
+  const limiteRaw = req.query.limite ? Number(req.query.limite) : 50;
+
+  if (req.query.pagina && (!Number.isInteger(paginaRaw) || paginaRaw < 1)) {
+    return error(res, 'El parámetro pagina debe ser un número entero positivo.', 400);
+  }
+  if (req.query.limite && (!Number.isInteger(limiteRaw) || limiteRaw < 1)) {
+    return error(res, 'El parámetro limite debe ser un número entero positivo.', 400);
+  }
+
+  // Fix CUBIC: validar categoria_id si se provee
+  if (req.query.categoria_id && !esUuidValido(req.query.categoria_id)) {
+    return error(res, 'El parámetro categoria_id no tiene un formato UUID válido.', 400);
+  }
+
   const { error: validacionError, value: filtros } = filtrosProductosSchema.validate({
     ...req.query,
-    // Convertir strings a tipos correctos
     activo:    req.query.activo    !== undefined ? req.query.activo    === 'true' : undefined,
     con_stock: req.query.con_stock !== undefined ? req.query.con_stock === 'true' : undefined,
-    pagina:    req.query.pagina    ? parseInt(req.query.pagina)  : 1,
-    limite:    req.query.limite    ? parseInt(req.query.limite)  : 50,
+    pagina:    paginaRaw,
+    limite:    limiteRaw,
   });
 
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
-  }
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
     const resultado = await service.listarProductos({
@@ -171,9 +198,13 @@ const listarProductos = async (req, res) => {
 
 /**
  * GET /api/productos/:id
- * Obtiene un producto por ID
+ * Fix CUBIC: valida UUID antes de consultar
  */
 const obtenerProducto = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de producto no tiene un formato UUID válido.', 400);
+  }
+
   try {
     const producto = await service.obtenerProducto({
       tenantId:   req.usuario.tenant_id,
@@ -187,17 +218,15 @@ const obtenerProducto = async (req, res) => {
 
 /**
  * POST /api/productos
- * Crea un nuevo producto
  */
 const crearProducto = async (req, res) => {
   const { error: validacionError, value } = crearProductoSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
-  }
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
   try {
     const producto = await service.crearProducto({
       tenantId: req.usuario.tenant_id,
-      datos: value,
+      datos:    value,
     });
     return creado(res, producto, 'Producto creado exitosamente.');
   } catch (err) {
@@ -207,18 +236,21 @@ const crearProducto = async (req, res) => {
 
 /**
  * PATCH /api/productos/:id
- * Actualiza un producto existente
+ * Fix CUBIC: valida UUID antes de actualizar
  */
 const actualizarProducto = async (req, res) => {
-  const { error: validacionError, value } = actualizarProductoSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de producto no tiene un formato UUID válido.', 400);
   }
+
+  const { error: validacionError, value } = actualizarProductoSchema.validate(req.body);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
   try {
     const producto = await service.actualizarProducto({
       tenantId:   req.usuario.tenant_id,
       productoId: req.params.id,
-      datos: value,
+      datos:      value,
     });
     return exito(res, producto, 'Producto actualizado exitosamente.');
   } catch (err) {
@@ -228,9 +260,13 @@ const actualizarProducto = async (req, res) => {
 
 /**
  * PATCH /api/productos/:id/toggle
- * Activa o desactiva un producto rápidamente desde el POS
+ * Fix CUBIC: valida UUID antes de toggle
  */
 const toggleProducto = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de producto no tiene un formato UUID válido.', 400);
+  }
+
   try {
     const resultado = await service.toggleProducto({
       tenantId:   req.usuario.tenant_id,
@@ -245,9 +281,13 @@ const toggleProducto = async (req, res) => {
 
 /**
  * DELETE /api/productos/:id
- * Desactiva un producto (soft delete)
+ * Fix CUBIC: valida UUID antes de desactivar
  */
 const desactivarProducto = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de producto no tiene un formato UUID válido.', 400);
+  }
+
   try {
     await service.desactivarProducto({
       tenantId:   req.usuario.tenant_id,
@@ -261,13 +301,16 @@ const desactivarProducto = async (req, res) => {
 
 /**
  * PATCH /api/productos/:id/stock
- * Ajusta el stock de un producto
+ * Fix CUBIC: valida UUID + cantidad no negativa (ya en schema)
  */
 const ajustarStock = async (req, res) => {
-  const { error: validacionError, value } = ajustarStockSchema.validate(req.body);
-  if (validacionError) {
-    return error(res, validacionError.details[0].message, 400);
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de producto no tiene un formato UUID válido.', 400);
   }
+
+  const { error: validacionError, value } = ajustarStockSchema.validate(req.body);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
   try {
     const producto = await service.ajustarStock({
       tenantId:   req.usuario.tenant_id,
@@ -282,30 +325,13 @@ const ajustarStock = async (req, res) => {
   }
 };
 
-/**
- * GET /api/productos/alertas/stock-bajo
- * Productos con stock por debajo del mínimo
- * Para el panel admin en tiempo real
- */
-const stockBajo = async (req, res) => {
-  try {
-    const productos = await service.productosStockBajo({
-      tenantId: req.usuario.tenant_id,
-    });
-    return exito(res, productos);
-  } catch (err) {
-    return manejarError(res, err);
-  }
-};
-
 module.exports = {
-  // Categorías
   listarCategorias,
   obtenerCategoria,
   crearCategoria,
   actualizarCategoria,
   desactivarCategoria,
-  // Productos
+  stockBajo,
   listarProductos,
   obtenerProducto,
   crearProducto,
@@ -313,5 +339,4 @@ module.exports = {
   toggleProducto,
   desactivarProducto,
   ajustarStock,
-  stockBajo,
 };

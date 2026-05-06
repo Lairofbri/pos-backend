@@ -20,6 +20,7 @@ const {
   error,
   errorServidor,
 } = require('../../utils/response');
+const { esUuidValido } = require('../../middlewares/uuid.middleware');
 const logger = require('../../utils/logger');
 
 // ─────────────────────────────────────────────
@@ -32,10 +33,7 @@ const manejarError = (res, err) => {
   if (err.code === '23505') {
     return error(res, 'Ya existe un registro con ese valor.', 409);
   }
-  logger.error('Error no controlado en POS', {
-    error: err.message,
-    stack: err.stack,
-  });
+  logger.error('Error no controlado en POS', { error: err.message, stack: err.stack });
   return errorServidor(res);
 };
 
@@ -45,12 +43,11 @@ const manejarError = (res, err) => {
 
 /**
  * GET /api/mesas
- * Lista todas las mesas del tenant
- * Query param: ?todas=true para incluir inactivas (solo admin)
+ * Fix CUBIC: solo admin puede ver inactivas
  */
 const listarMesas = async (req, res) => {
   try {
-    const esAdmin    = req.usuario.rol === 'administrador';
+    const esAdmin     = req.usuario.rol === 'administrador';
     const soloActivas = !esAdmin || req.query.todas !== 'true';
 
     const mesas = await service.listarMesas({
@@ -65,8 +62,13 @@ const listarMesas = async (req, res) => {
 
 /**
  * GET /api/mesas/:id
+ * Fix CUBIC: valida UUID antes de consultar
  */
 const obtenerMesa = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de mesa no tiene un formato UUID válido.', 400);
+  }
+
   try {
     const mesa = await service.obtenerMesa({
       tenantId: req.usuario.tenant_id,
@@ -98,8 +100,13 @@ const crearMesa = async (req, res) => {
 
 /**
  * PATCH /api/mesas/:id
+ * Fix CUBIC: valida UUID antes de actualizar
  */
 const actualizarMesa = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de mesa no tiene un formato UUID válido.', 400);
+  }
+
   const { error: validacionError, value } = actualizarMesaSchema.validate(req.body);
   if (validacionError) return error(res, validacionError.details[0].message, 400);
 
@@ -121,7 +128,7 @@ const actualizarMesa = async (req, res) => {
 
 /**
  * GET /api/ordenes
- * Lista órdenes con filtros opcionales
+ * Fix CUBIC: Number() + isInteger(), validar UUIDs en query params
  */
 const listarOrdenes = async (req, res) => {
   const paginaRaw = req.query.pagina ? Number(req.query.pagina) : 1;
@@ -132,6 +139,9 @@ const listarOrdenes = async (req, res) => {
   }
   if (req.query.limite && (!Number.isInteger(limiteRaw) || limiteRaw < 1)) {
     return error(res, 'El parámetro limite debe ser un número entero positivo.', 400);
+  }
+  if (req.query.usuario_id && !esUuidValido(req.query.usuario_id)) {
+    return error(res, 'El parámetro usuario_id no tiene un formato UUID válido.', 400);
   }
 
   const { error: validacionError, value: filtros } = filtrosOrdenesSchema.validate({
@@ -155,9 +165,13 @@ const listarOrdenes = async (req, res) => {
 
 /**
  * GET /api/ordenes/:id
- * Detalle completo de una orden con items y pago
+ * Fix CUBIC: valida UUID antes de consultar
  */
 const obtenerOrden = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de orden no tiene un formato UUID válido.', 400);
+  }
+
   try {
     const orden = await service.obtenerOrden({
       tenantId: req.usuario.tenant_id,
@@ -171,7 +185,6 @@ const obtenerOrden = async (req, res) => {
 
 /**
  * POST /api/ordenes
- * Crea una nueva orden
  */
 const crearOrden = async (req, res) => {
   const { error: validacionError, value } = crearOrdenSchema.validate(req.body);
@@ -191,9 +204,13 @@ const crearOrden = async (req, res) => {
 
 /**
  * PATCH /api/ordenes/:id
- * Actualiza notas o descuento de una orden
+ * Fix CUBIC: valida UUID antes de actualizar
  */
 const actualizarOrden = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de orden no tiene un formato UUID válido.', 400);
+  }
+
   const { error: validacionError, value } = actualizarOrdenSchema.validate(req.body);
   if (validacionError) return error(res, validacionError.details[0].message, 400);
 
@@ -211,9 +228,13 @@ const actualizarOrden = async (req, res) => {
 
 /**
  * PATCH /api/ordenes/:id/estado
- * Cambia el estado de una orden siguiendo el flujo definido
+ * Fix CUBIC: valida UUID antes de cambiar estado
  */
 const cambiarEstadoOrden = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de orden no tiene un formato UUID válido.', 400);
+  }
+
   const { error: validacionError, value } = cambiarEstadoSchema.validate(req.body);
   if (validacionError) return error(res, validacionError.details[0].message, 400);
 
@@ -236,9 +257,13 @@ const cambiarEstadoOrden = async (req, res) => {
 
 /**
  * POST /api/ordenes/:id/items
- * Agrega un producto a la orden
+ * Fix CUBIC: valida UUID de orden antes de agregar item
  */
 const agregarItem = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de orden no tiene un formato UUID válido.', 400);
+  }
+
   const { error: validacionError, value } = agregarItemSchema.validate(req.body);
   if (validacionError) return error(res, validacionError.details[0].message, 400);
 
@@ -256,9 +281,16 @@ const agregarItem = async (req, res) => {
 
 /**
  * PATCH /api/ordenes/:id/items/:itemId
- * Modifica cantidad, notas o estado de un item
+ * Fix CUBIC: valida ambos UUIDs antes de actualizar
  */
 const actualizarItem = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de orden no tiene un formato UUID válido.', 400);
+  }
+  if (!esUuidValido(req.params.itemId)) {
+    return error(res, 'El ID de item no tiene un formato UUID válido.', 400);
+  }
+
   const { error: validacionError, value } = actualizarItemSchema.validate(req.body);
   if (validacionError) return error(res, validacionError.details[0].message, 400);
 
@@ -277,9 +309,16 @@ const actualizarItem = async (req, res) => {
 
 /**
  * DELETE /api/ordenes/:id/items/:itemId
- * Cancela un item de la orden (soft delete)
+ * Fix CUBIC: valida ambos UUIDs antes de eliminar
  */
 const eliminarItem = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de orden no tiene un formato UUID válido.', 400);
+  }
+  if (!esUuidValido(req.params.itemId)) {
+    return error(res, 'El ID de item no tiene un formato UUID válido.', 400);
+  }
+
   try {
     const totales = await service.eliminarItem({
       tenantId: req.usuario.tenant_id,
@@ -298,9 +337,13 @@ const eliminarItem = async (req, res) => {
 
 /**
  * POST /api/ordenes/:id/pagar
- * Registra el pago de una orden
+ * Fix CUBIC: valida UUID antes de registrar pago
  */
 const registrarPago = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de orden no tiene un formato UUID válido.', 400);
+  }
+
   const { error: validacionError, value } = registrarPagoSchema.validate(req.body);
   if (validacionError) return error(res, validacionError.details[0].message, 400);
 
@@ -318,21 +361,17 @@ const registrarPago = async (req, res) => {
 };
 
 module.exports = {
-  // Mesas
   listarMesas,
   obtenerMesa,
   crearMesa,
   actualizarMesa,
-  // Órdenes
   listarOrdenes,
   obtenerOrden,
   crearOrden,
   actualizarOrden,
   cambiarEstadoOrden,
-  // Items
   agregarItem,
   actualizarItem,
   eliminarItem,
-  // Pagos
   registrarPago,
 };
