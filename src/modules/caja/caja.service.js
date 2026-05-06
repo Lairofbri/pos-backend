@@ -177,6 +177,9 @@ const getCajaActiva = async ({ tenantId, sucursalId = null }) => {
  */
 const cerrarCaja = async ({ tenantId, usuarioId, datos }) => {
   const { monto_final, notas_cierre, sucursal_id } = datos;
+  if (!sucursal_id) {
+    throw { status: 400, mensaje: 'sucursal_id es obligatorio.' };
+  }
   const caja = await obtenerCajaAbierta({ tenantId, sucursalId: sucursal_id });
 
   if (!caja) {
