@@ -166,7 +166,7 @@ const cambiarEstadoMesa = async ({ tenantId, mesaId, estado }) => {
 // ═════════════════════════════════════════════
 
 const listarOrdenes = async ({ tenantId, filtros = {} }) => {
-  const { estado, tipo, usuario_id, fecha_desde, fecha_hasta, pagina = 1, limite = 50 } = filtros;
+  const { estado, tipo, origen, usuario_id, fecha_desde, fecha_hasta, pagina = 1, limite = 50 } = filtros;
 
   const condiciones = ['o.tenant_id = $1'];
   const valores     = [tenantId];
@@ -174,6 +174,7 @@ const listarOrdenes = async ({ tenantId, filtros = {} }) => {
 
   if (estado)      { condiciones.push(`o.estado = $${idx++}`);      valores.push(estado); }
   if (tipo)        { condiciones.push(`o.tipo = $${idx++}`);        valores.push(tipo); }
+  if (origen)      { condiciones.push(`o.origen = $${idx++}`);      valores.push(origen); }
   if (usuario_id)  { condiciones.push(`o.usuario_id = $${idx++}`);  valores.push(usuario_id); }
   if (fecha_desde) { condiciones.push(`o.creado_en >= $${idx++}`);  valores.push(fecha_desde); }
   if (fecha_hasta) { condiciones.push(`o.creado_en <= $${idx++}`);  valores.push(fecha_hasta); }
@@ -182,7 +183,7 @@ const listarOrdenes = async ({ tenantId, filtros = {} }) => {
 
   const { rows } = await query(
     `SELECT
-       o.id, o.tipo, o.estado, o.numero_orden,
+       o.id, o.tipo, o.estado, o.numero_orden, o.origen, o.numero_externo,
        o.subtotal, o.porcentaje_descuento, o.descuento,
        o.total, o.gravado, o.iva, o.notas,
        o.mesa_id, o.cliente_id, o.usuario_id,
@@ -221,7 +222,7 @@ const obtenerOrden = async ({ tenantId, ordenId }) => {
   // Obtener datos de la orden
   const { rows: ordenRows } = await query(
     `SELECT
-       o.id, o.tipo, o.estado, o.numero_orden,
+       o.id, o.tipo, o.estado, o.numero_orden, o.origen, o.numero_externo,
        o.subtotal, o.porcentaje_descuento, o.descuento,
        o.total, o.gravado, o.iva, o.notas,
        o.mesa_id, o.cliente_id, o.usuario_id,
@@ -286,21 +287,23 @@ const crearOrden = async ({ tenantId, usuarioId, datos }) => {
     // Crear la orden
     const { rows } = await client.query(
       `INSERT INTO ordenes
-         (tenant_id, tipo, mesa_id, cliente_id, usuario_id, notas, porcentaje_descuento)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (tenant_id, tipo, mesa_id, cliente_id, usuario_id, notas, porcentaje_descuento, origen, numero_externo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING
-         id, tipo, estado, numero_orden,
+         id, tipo, estado, numero_orden, origen, numero_externo,
          subtotal, descuento, total, gravado, iva,
          mesa_id, cliente_id, usuario_id, notas,
          porcentaje_descuento, creado_en`,
       [
         tenantId,
         tipo,
-        mesa_id   || null,
-        cliente_id || null,
+        mesa_id        || null,
+        cliente_id     || null,
         usuarioId,
-        notas     || null,
+        notas          || null,
         porcentaje_descuento,
+        datos.origen   || 'pos',
+        datos.numero_externo || null,
       ]
     );
 
