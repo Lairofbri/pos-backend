@@ -44,7 +44,7 @@ const validarUuidParam = (param = 'id', nombreLegible = null) => {
  * @param {string} nombre — nombre del param para el mensaje
  */
 const validarUuidQuery = (res, valor, nombre) => {
-  if (valor && !esUuidValido(valor)) {
+  if (valor != null && !esUuidValido(valor)) {
     error(res, `El parámetro ${nombre} no tiene un formato UUID válido.`, 400);
     return false;
   }
