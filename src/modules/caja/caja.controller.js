@@ -15,6 +15,7 @@ const {
   error,
   errorServidor,
 } = require('../../utils/response');
+const { esUuidValido } = require('../../middlewares/uuid.middleware');
 const logger = require('../../utils/logger');
 
 // ─────────────────────────────────────────────
@@ -24,10 +25,7 @@ const manejarError = (res, err) => {
   if (err.status && err.mensaje) {
     return error(res, err.mensaje, err.status);
   }
-  logger.error('Error no controlado en caja', {
-    error: err.message,
-    stack: err.stack,
-  });
+  logger.error('Error no controlado en caja', { error: err.message, stack: err.stack });
   return errorServidor(res);
 };
 
@@ -37,8 +35,6 @@ const manejarError = (res, err) => {
 
 /**
  * POST /api/caja/abrir
- * Abre un nuevo turno de caja
- * Solo admin y cajero pueden abrir caja
  */
 const abrirCaja = async (req, res) => {
   const { error: validacionError, value } = abrirCajaSchema.validate(req.body);
@@ -58,14 +54,20 @@ const abrirCaja = async (req, res) => {
 
 /**
  * GET /api/caja/activa
- * Obtiene la caja actualmente abierta con resumen del turno
- * Todos los roles pueden consultarla
+ * Fix CUBIC: valida formato UUID del sucursal_id en query param
  */
 const getCajaActiva = async (req, res) => {
+  const { sucursal_id } = req.query;
+
+  // Fix CUBIC error 3: validar UUID del query param antes de pasarlo al service
+  if (sucursal_id && !esUuidValido(sucursal_id)) {
+    return error(res, 'El parámetro sucursal_id no tiene un formato UUID válido.', 400);
+  }
+
   try {
     const caja = await service.getCajaActiva({
       tenantId:   req.usuario.tenant_id,
-      sucursalId: req.query.sucursal_id || null,
+      sucursalId: sucursal_id || null,
     });
     return exito(res, caja);
   } catch (err) {
@@ -75,12 +77,16 @@ const getCajaActiva = async (req, res) => {
 
 /**
  * POST /api/caja/cerrar
- * Cierra el turno activo con el monto contado
- * Solo admin y cajero pueden cerrar caja
+ * Fix CUBIC error 2: pasa sucursal_id para evitar cerrar caja equivocada en multi-sucursal
  */
 const cerrarCaja = async (req, res) => {
   const { error: validacionError, value } = cerrarCajaSchema.validate(req.body);
   if (validacionError) return error(res, validacionError.details[0].message, 400);
+
+  // Validar sucursal_id si viene en el body
+  if (value.sucursal_id && !esUuidValido(value.sucursal_id)) {
+    return error(res, 'El campo sucursal_id no tiene un formato UUID válido.', 400);
+  }
 
   try {
     const caja = await service.cerrarCaja({
@@ -96,11 +102,16 @@ const cerrarCaja = async (req, res) => {
 
 /**
  * POST /api/caja/movimiento
- * Registra un retiro o depósito manual en la caja activa
+ * Fix CUBIC error 2: pasa sucursal_id para operar en la caja correcta en multi-sucursal
  */
 const registrarMovimiento = async (req, res) => {
   const { error: validacionError, value } = movimientoSchema.validate(req.body);
   if (validacionError) return error(res, validacionError.details[0].message, 400);
+
+  // Validar sucursal_id si viene en el body
+  if (value.sucursal_id && !esUuidValido(value.sucursal_id)) {
+    return error(res, 'El campo sucursal_id no tiene un formato UUID válido.', 400);
+  }
 
   try {
     const movimiento = await service.registrarMovimiento({
@@ -119,9 +130,14 @@ const registrarMovimiento = async (req, res) => {
 
 /**
  * GET /api/caja/:id/movimientos
- * Historial de movimientos de una caja específica
+ * Fix CUBIC error 4: valida UUID del parámetro :id antes de consultar
  */
 const getMovimientos = async (req, res) => {
+  // Fix CUBIC: validar UUID antes de que llegue a PostgreSQL
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de caja no tiene un formato UUID válido.', 400);
+  }
+
   const paginaRaw = req.query.pagina ? Number(req.query.pagina) : 1;
   const limiteRaw = req.query.limite ? Number(req.query.limite) : 50;
 
@@ -147,8 +163,7 @@ const getMovimientos = async (req, res) => {
 
 /**
  * GET /api/caja/historial
- * Lista el historial de cajas con filtros
- * Solo admin
+ * Fix CUBIC: Number() + isInteger() en paginación
  */
 const getHistorialCajas = async (req, res) => {
   const paginaRaw = req.query.pagina ? Number(req.query.pagina) : 1;

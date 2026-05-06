@@ -14,6 +14,7 @@ const {
   error,
   errorServidor,
 } = require('../../utils/response');
+const { esUuidValido } = require('../../middlewares/uuid.middleware');
 const logger = require('../../utils/logger');
 
 // ─────────────────────────────────────────────
@@ -26,10 +27,7 @@ const manejarError = (res, err) => {
   if (err.code === '23505') {
     return error(res, 'Ya existe un cliente con ese NIT o NRC.', 409);
   }
-  logger.error('Error no controlado en clientes', {
-    error: err.message,
-    stack: err.stack,
-  });
+  logger.error('Error no controlado en clientes', { error: err.message, stack: err.stack });
   return errorServidor(res);
 };
 
@@ -39,7 +37,7 @@ const manejarError = (res, err) => {
 
 /**
  * GET /api/clientes
- * Lista clientes con filtros y paginación
+ * Fix CUBIC: Number() + isInteger() en paginación
  */
 const listarClientes = async (req, res) => {
   const paginaRaw = req.query.pagina ? Number(req.query.pagina) : 1;
@@ -75,7 +73,6 @@ const listarClientes = async (req, res) => {
 /**
  * GET /api/clientes/buscar?q=texto
  * Búsqueda rápida para el POS al momento de facturar
- * Devuelve máximo 10 resultados optimizados para selección rápida
  */
 const buscarClientes = async (req, res) => {
   const { q } = req.query;
@@ -93,9 +90,13 @@ const buscarClientes = async (req, res) => {
 
 /**
  * GET /api/clientes/:id
- * Detalle completo de un cliente
+ * Fix CUBIC: valida UUID antes de consultar
  */
 const obtenerCliente = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de cliente no tiene un formato UUID válido.', 400);
+  }
+
   try {
     const cliente = await service.obtenerCliente({
       tenantId:  req.usuario.tenant_id,
@@ -109,7 +110,6 @@ const obtenerCliente = async (req, res) => {
 
 /**
  * POST /api/clientes
- * Crea un nuevo cliente
  */
 const crearCliente = async (req, res) => {
   const { error: validacionError, value } = crearClienteSchema.validate(req.body);
@@ -128,9 +128,13 @@ const crearCliente = async (req, res) => {
 
 /**
  * PATCH /api/clientes/:id
- * Actualiza datos de un cliente
+ * Fix CUBIC: valida UUID antes de actualizar
  */
 const actualizarCliente = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de cliente no tiene un formato UUID válido.', 400);
+  }
+
   const { error: validacionError, value } = actualizarClienteSchema.validate(req.body);
   if (validacionError) return error(res, validacionError.details[0].message, 400);
 
@@ -148,9 +152,13 @@ const actualizarCliente = async (req, res) => {
 
 /**
  * DELETE /api/clientes/:id
- * Desactiva un cliente (soft delete)
+ * Fix CUBIC: valida UUID antes de desactivar
  */
 const desactivarCliente = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de cliente no tiene un formato UUID válido.', 400);
+  }
+
   try {
     await service.desactivarCliente({
       tenantId:  req.usuario.tenant_id,

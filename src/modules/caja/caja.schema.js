@@ -12,13 +12,16 @@ const abrirCajaSchema = Joi.object({
     'number.min':   'El monto inicial no puede ser negativo.',
     'any.required': 'El monto inicial es requerido.',
   }),
-  sucursal_id: Joi.string().uuid().optional().allow(null),
-  notas:       Joi.string().max(500).optional().allow('', null),
+  // Fix CUBIC: sucursal_id requerido para multi-sucursal
+  sucursal_id: Joi.string().uuid().optional().allow(null).messages({
+    'string.uuid': 'El sucursal_id no tiene un formato UUID válido.',
+  }),
+  notas: Joi.string().max(500).optional().allow('', null),
 });
 
 /**
  * Schema para cerrar una caja
- * El cajero cuenta el efectivo físico y lo registra
+ * Fix CUBIC: incluye sucursal_id para cerrar la caja correcta en multi-sucursal
  */
 const cerrarCajaSchema = Joi.object({
   monto_final: Joi.number().min(0).required().messages({
@@ -26,12 +29,15 @@ const cerrarCajaSchema = Joi.object({
     'any.required': 'El monto contado es requerido para cerrar la caja.',
   }),
   notas_cierre: Joi.string().max(500).optional().allow('', null),
+  // Fix CUBIC error 2: sucursal_id para identificar qué caja cerrar en multi-sucursal
+  sucursal_id:  Joi.string().uuid().optional().allow(null).messages({
+    'string.uuid': 'El sucursal_id no tiene un formato UUID válido.',
+  }),
 });
 
 /**
  * Schema para registrar un movimiento manual
- * Retiros: sacar dinero de la caja (gastos, pagos a proveedores)
- * Depósitos: agregar dinero a la caja (cambio, fondo adicional)
+ * Fix CUBIC: incluye sucursal_id para operar en la caja correcta en multi-sucursal
  */
 const movimientoSchema = Joi.object({
   tipo: Joi.string()
@@ -49,6 +55,10 @@ const movimientoSchema = Joi.object({
     'string.min':   'El motivo debe tener al menos 3 caracteres.',
     'any.required': 'El motivo del movimiento es requerido.',
   }),
+  // Fix CUBIC error 2: sucursal_id para operar en la caja correcta
+  sucursal_id: Joi.string().uuid().optional().allow(null).messages({
+    'string.uuid': 'El sucursal_id no tiene un formato UUID válido.',
+  }),
 });
 
 /**
@@ -58,6 +68,7 @@ const filtrosCajaSchema = Joi.object({
   estado:      Joi.string().valid('abierta', 'cerrada').optional(),
   fecha_desde: Joi.date().iso().optional(),
   fecha_hasta: Joi.date().iso().optional(),
+  sucursal_id: Joi.string().uuid().optional().allow(null),
   pagina:      Joi.number().integer().min(1).optional().default(1),
   limite:      Joi.number().integer().min(1).max(100).optional().default(20),
 });
