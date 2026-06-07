@@ -15,6 +15,7 @@ const productosRoutes = require('./modules/productos/productos.routes');
 const posRoutes       = require('./modules/pos/pos.routes');
 const clientesRoutes  = require('./modules/clientes/clientes.routes');
 const cajaRoutes      = require('./modules/caja/caja.routes');
+const permisosRoutes  = require('./modules/permisos/permisos.routes');
 // Aquí se irán agregando los demás módulos:
 
 
@@ -24,10 +25,11 @@ const app = express();
 // Middlewares de seguridad
 // ─────────────────────────────────────────────
 
-// Helmet: headers de seguridad HTTP
-app.use(helmet());
+// Helmet: headers de seguridad HTTP (CSP se aplica solo a /api abajo)
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(helmet.hsts({ maxAge: 31536000, includeSubDomains: true }));
-app.use(helmet.contentSecurityPolicy({
+// CSP solo en rutas /api — /docs y /health quedan libres para Scalar
+app.use('/api', helmet.contentSecurityPolicy({
   directives: {
     defaultSrc: ["'self'"],
     scriptSrc: ["'self'"],
@@ -40,14 +42,15 @@ app.use(helmet.contentSecurityPolicy({
   },
 }));
 
-// CORS: solo orígenes de la configuración
+// CORS: solo orígenes de la configuración (en dev permite todo para Postman/Scalar)
 app.use(cors({
-  origin: (origin, callback) => {
-    // Permitir requests sin origin (Electron, apps móviles, Postman en dev)
-    if (!origin) return callback(null, true);
-    if (CORS_ORIGINS.includes(origin)) return callback(null, true);
-    callback(new Error('Origen no permitido por CORS'));
-  },
+  origin: ES_PRODUCCION
+    ? (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (CORS_ORIGINS.includes(origin)) return callback(null, true);
+        callback(new Error('Origen no permitido por CORS'));
+      }
+    : true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id'],
   credentials: true,
@@ -90,6 +93,24 @@ if (!ES_PRODUCCION) {
 }
 
 // ─────────────────────────────────────────────
+// Documentación API (Scalar) — solo en desarrollo
+// ─────────────────────────────────────────────
+if (!ES_PRODUCCION) {
+  const { apiReference } = require('@scalar/express-api-reference');
+  const path = require('path');
+
+  app.get('/docs', apiReference({
+    spec: { url: '/api/openapi.json' },
+    theme: 'purple',
+  }));
+
+  app.get('/api/openapi.json', (_req, res) => {
+    res.setHeader('Content-Type', 'application/yaml');
+    res.sendFile(path.join(__dirname, '..', 'docs', 'api', 'openapi.yaml'));
+  });
+}
+
+// ─────────────────────────────────────────────
 // Health check — para Railway y monitoreo
 // ─────────────────────────────────────────────
 app.get('/health', (_req, res) => {
@@ -104,7 +125,7 @@ app.use('/api', productosRoutes);
 app.use('/api', posRoutes);
 app.use('/api', clientesRoutes);
 app.use('/api', cajaRoutes);
-
+app.use('/api', permisosRoutes);
 
 // ─────────────────────────────────────────────
 // 404 — Ruta no encontrada

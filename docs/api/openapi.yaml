@@ -1,0 +1,956 @@
+openapi: 3.1.0
+info:
+  title: POS Backend API
+  version: 1.0.0
+  description: |
+    API multi-tenant para sistema POS de restaurantes (El Salvador).
+
+    ## Autenticación
+    - **Panel web**: `POST /auth/login` con email + password → JWT
+    - **Estación POS**: `POST /auth/login-pin` con PIN 6 dígitos + header `X-Tenant-Id`
+    - Incluir el token en todas las demás peticiones: `Authorization: Bearer <token>`
+  contact:
+    name: POS Backend Team
+servers:
+  - url: http://localhost:3000/api
+    description: Desarrollo local
+tags:
+  - name: Auth
+    description: Autenticación y gestión de usuarios
+  - name: Permisos
+    description: Configuración de permisos por rol (admin)
+  - name: Productos
+    description: Catálogo de productos y categorías
+  - name: POS
+    description: Mesas, órdenes, items y pagos
+  - name: Clientes
+    description: Registro y búsqueda de clientes
+  - name: Caja
+    description: Apertura, cierre y movimientos de caja
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT obtenido al hacer login
+
+  schemas:
+    # ── Respuestas comunes ──
+    OkResponse:
+      type: object
+      properties:
+        ok: { type: boolean, example: true }
+        mensaje: { type: string }
+        data: { type: object }
+    ErrorResponse:
+      type: object
+      properties:
+        ok: { type: boolean, example: false }
+        mensaje: { type: string }
+    # ── Auth ──
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+    LoginPinRequest:
+      type: object
+      required: [usuario_id, pin]
+      properties:
+        usuario_id: { type: string, format: uuid }
+        pin: { type: string, pattern: '^\d{6}$' }
+    TokenResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        mensaje: { type: string }
+        data:
+          type: object
+          properties:
+            usuario: { $ref: '#/components/schemas/Usuario' }
+            access_token: { type: string }
+            refresh_token: { type: string }
+            expires_in: { type: string }
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+    Usuario:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        sucursal_id: { type: string, format: uuid }
+        nombre: { type: string }
+        apellido: { type: string }
+        email: { type: string, format: email }
+        rol: { type: string, enum: [administrador, gerente, cajero, mesero, cocinero] }
+        activo: { type: boolean }
+    CrearUsuarioRequest:
+      type: object
+      required: [nombre, pin, rol]
+      properties:
+        nombre: { type: string }
+        apellido: { type: string }
+        email: { type: string, format: email }
+        pin: { type: string, pattern: '^\d{6}$' }
+        password: { type: string }
+        rol: { type: string, enum: [administrador, gerente, cajero, mesero, cocinero] }
+        sucursal_id: { type: string, format: uuid }
+    CambiarPinRequest:
+      type: object
+      required: [pin_actual, pin_nuevo]
+      properties:
+        pin_actual: { type: string, pattern: '^\d{6}$' }
+        pin_nuevo: { type: string, pattern: '^\d{6}$' }
+    CambiarPasswordRequest:
+      type: object
+      required: [password_actual, password_nuevo]
+      properties:
+        password_actual: { type: string }
+        password_nuevo: { type: string }
+    # ── Permisos ──
+    CatalogoPermisos:
+      type: array
+      items:
+        type: object
+        properties:
+          modulo: { type: string }
+          permisos:
+            type: array
+            items:
+              type: object
+              properties:
+                codigo: { type: string }
+                nombre: { type: string }
+                activo: { type: boolean }
+    # ── Productos ──
+    Producto:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string }
+        descripcion: { type: string }
+        precio: { type: number }
+        categoria_id: { type: string, format: uuid }
+        imagen_url: { type: string }
+        tiene_stock: { type: boolean }
+        stock_actual: { type: integer }
+        stock_minimo: { type: integer }
+        codigo: { type: string }
+        activo: { type: boolean }
+    Categoria:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string }
+        descripcion: { type: string }
+        color: { type: string }
+        orden: { type: integer }
+        activo: { type: boolean }
+    # ── POS ──
+    Orden:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { type: string, enum: [rapido, mesa, delivery] }
+        estado: { type: string, enum: [abierta, en_proceso, lista, entregada, pagada, cancelada] }
+        numero_orden: { type: integer }
+        subtotal: { type: number }
+        descuento: { type: number }
+        total: { type: number }
+        mesa_id: { type: string, format: uuid }
+        cliente_id: { type: string, format: uuid }
+        items: { type: array }
+        pago: { type: object }
+    # ── Clientes ──
+    Cliente:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string }
+        apellido: { type: string }
+        telefono: { type: string }
+        email: { type: string, format: email }
+        nit: { type: string }
+        nrc: { type: string }
+        razon_social: { type: string }
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ═════════════════════════════════════════════
+  # AUTH
+  # ═════════════════════════════════════════════
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login con email y password (panel admin web)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { description: Login exitoso }
+        '401': { description: Credenciales incorrectas }
+
+  /auth/login-pin:
+    post:
+      tags: [Auth]
+      summary: Login con PIN (estación POS)
+      security: []
+      parameters:
+        - name: X-Tenant-Id
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginPinRequest' }
+      responses:
+        '200': { description: Login exitoso }
+        '401': { description: PIN incorrecto }
+        '429': { description: Cuenta bloqueada temporalmente }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Renovar access token (rota refresh token)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200': { description: Nuevo access_token + refresh_token }
+        '401': { description: Refresh token inválido o expirado }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Cerrar sesión — invalida refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200': { description: Sesión cerrada }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Datos del usuario autenticado
+      responses:
+        '200':
+          description: Usuario actual
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+
+  /auth/cambiar-pin:
+    put:
+      tags: [Auth]
+      summary: Cambiar PIN propio
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CambiarPinRequest' }
+      responses:
+        '200': { description: PIN actualizado }
+
+  /auth/cambiar-password:
+    put:
+      tags: [Auth]
+      summary: Cambiar password propio (solo admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CambiarPasswordRequest' }
+      responses:
+        '200': { description: Password actualizado }
+
+  /usuarios:
+    get:
+      tags: [Auth]
+      summary: Listar usuarios del tenant
+      responses:
+        '200': { description: Lista de usuarios }
+    post:
+      tags: [Auth]
+      summary: Crear nuevo usuario (solo admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CrearUsuarioRequest' }
+      responses:
+        '201': { description: Usuario creado }
+
+  /usuarios/pin-list:
+    get:
+      tags: [Auth]
+      summary: Lista de usuarios para pantalla PIN (público)
+      security: []
+      parameters:
+        - name: X-Tenant-Id
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Lista reducida (id, nombre, apellido, rol) }
+
+  /usuarios/{id}:
+    get:
+      tags: [Auth]
+      summary: Obtener usuario por ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Usuario encontrado }
+        '404': { description: No encontrado }
+    patch:
+      tags: [Auth]
+      summary: Actualizar usuario
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Usuario actualizado }
+
+  /usuarios/{id}/resetear-pin:
+    post:
+      tags: [Auth]
+      summary: Resetear PIN de un usuario (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pin_nuevo]
+              properties:
+                pin_nuevo: { type: string, pattern: '^\d{6}$' }
+      responses:
+        '200': { description: PIN reseteado }
+
+  # ═════════════════════════════════════════════
+  # PERMISOS
+  # ═════════════════════════════════════════════
+  /permisos:
+    get:
+      tags: [Permisos]
+      summary: Catálogo de permisos disponibles
+      responses:
+        '200':
+          description: Catálogo agrupado por módulo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogoPermisos' }
+
+  /permisos/roles:
+    get:
+      tags: [Permisos]
+      summary: Roles del sistema
+      responses:
+        '200':
+          description: Lista de roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+
+  /permisos/rol/{rol}:
+    get:
+      tags: [Permisos]
+      summary: Permisos de un rol en el tenant (con estado activo)
+      parameters:
+        - name: rol
+          in: path
+          required: true
+          schema: { type: string, enum: [administrador, gerente, cajero, mesero, cocinero] }
+      responses:
+        '200': { description: Permisos del rol }
+    put:
+      tags: [Permisos]
+      summary: Activar/desactivar permisos para un rol
+      parameters:
+        - name: rol
+          in: path
+          required: true
+          schema: { type: string, enum: [administrador, gerente, cajero, mesero, cocinero] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permisos]
+              properties:
+                permisos:
+                  type: array
+                  items:
+                    type: object
+                    required: [codigo, activo]
+                    properties:
+                      codigo: { type: string }
+                      activo: { type: boolean }
+      responses:
+        '200': { description: Permisos actualizados }
+
+  /permisos/rol/{rol}/reset:
+    post:
+      tags: [Permisos]
+      summary: Resetear permisos de un rol a defaults
+      parameters:
+        - name: rol
+          in: path
+          required: true
+          schema: { type: string, enum: [administrador, gerente, cajero, mesero, cocinero] }
+      responses:
+        '200': { description: Permisos reseteados }
+
+  # ═════════════════════════════════════════════
+  # PRODUCTOS
+  # ═════════════════════════════════════════════
+  /categorias:
+    get:
+      tags: [Productos]
+      summary: Listar categorías
+      parameters:
+        - name: todas
+          in: query
+          schema: { type: string, enum: ['true'] }
+          description: Solo admin — incluye inactivas
+      responses:
+        '200': { description: Lista de categorías }
+    post:
+      tags: [Productos]
+      summary: Crear categoría
+      responses:
+        '201': { description: Categoría creada }
+
+  /categorias/{id}:
+    get:
+      tags: [Productos]
+      summary: Obtener categoría
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Categoría }
+    patch:
+      tags: [Productos]
+      summary: Actualizar categoría
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Categoría actualizada }
+    delete:
+      tags: [Productos]
+      summary: Desactivar categoría (soft delete)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Desactivada }
+
+  /productos:
+    get:
+      tags: [Productos]
+      summary: Listar productos con filtros y paginación
+      parameters:
+        - name: categoria_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: busqueda
+          in: query
+          schema: { type: string }
+        - name: con_stock
+          in: query
+          schema: { type: boolean }
+        - name: pagina
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limite
+          in: query
+          schema: { type: integer, default: 50, maximum: 100 }
+      responses:
+        '200': { description: Productos con paginación }
+    post:
+      tags: [Productos]
+      summary: Crear producto
+      responses:
+        '201': { description: Producto creado }
+
+  /productos/alertas/stock-bajo:
+    get:
+      tags: [Productos]
+      summary: Productos con stock bajo (≤ mínimo)
+      responses:
+        '200': { description: Lista de alertas }
+
+  /productos/{id}:
+    get:
+      tags: [Productos]
+      summary: Obtener producto
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Producto }
+    patch:
+      tags: [Productos]
+      summary: Actualizar producto
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Producto actualizado }
+    delete:
+      tags: [Productos]
+      summary: Desactivar producto (soft delete)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Desactivado }
+
+  /productos/{id}/toggle:
+    patch:
+      tags: [Productos]
+      summary: Activar/desactivar producto rápidamente
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Estado toggled }
+
+  /productos/{id}/stock:
+    patch:
+      tags: [Productos]
+      summary: Ajustar stock (suma, resta, absoluto)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Stock ajustado }
+
+  # ═════════════════════════════════════════════
+  # POS
+  # ═════════════════════════════════════════════
+  /mesas:
+    get:
+      tags: [POS]
+      summary: Listar mesas
+      responses:
+        '200': { description: Lista de mesas }
+    post:
+      tags: [POS]
+      summary: Crear mesa
+      responses:
+        '201': { description: Mesa creada }
+
+  /mesas/{id}:
+    get:
+      tags: [POS]
+      summary: Obtener mesa
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Mesa }
+    patch:
+      tags: [POS]
+      summary: Actualizar mesa
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Mesa actualizada }
+
+  /ordenes:
+    get:
+      tags: [POS]
+      summary: Listar órdenes con filtros y paginación
+      parameters:
+        - name: estado
+          in: query
+          schema: { type: string }
+        - name: tipo
+          in: query
+          schema: { type: string, enum: [rapido, mesa, delivery] }
+        - name: origen
+          in: query
+          schema: { type: string }
+        - name: usuario_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: pagina
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limite
+          in: query
+          schema: { type: integer, default: 50, maximum: 100 }
+      responses:
+        '200': { description: Órdenes con paginación }
+    post:
+      tags: [POS]
+      summary: Crear orden (mesa, rápida, delivery)
+      responses:
+        '201': { description: Orden creada }
+
+  /ordenes/{id}:
+    get:
+      tags: [POS]
+      summary: Obtener orden con items y pago
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Orden completa }
+    patch:
+      tags: [POS]
+      summary: Actualizar notas o descuento de orden
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Orden actualizada }
+
+  /ordenes/{id}/estado:
+    patch:
+      tags: [POS]
+      summary: Cambiar estado de orden
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [estado]
+              properties:
+                estado:
+                  type: string
+                  enum: [abierta, en_proceso, lista, entregada, pagada, cancelada]
+                motivo: { type: string }
+      responses:
+        '200': { description: Estado cambiado }
+
+  /ordenes/{id}/items:
+    post:
+      tags: [POS]
+      summary: Agregar producto a la orden
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [producto_id, cantidad]
+              properties:
+                producto_id: { type: string, format: uuid }
+                cantidad: { type: integer, minimum: 1 }
+                notas: { type: string }
+      responses:
+        '201': { description: Item agregado }
+
+  /ordenes/{id}/items/{itemId}:
+    patch:
+      tags: [POS]
+      summary: Actualizar item (cantidad, notas, estado)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Item actualizado }
+    delete:
+      tags: [POS]
+      summary: Eliminar item de la orden (soft delete)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Item eliminado }
+
+  /ordenes/{id}/pagar:
+    post:
+      tags: [POS]
+      summary: Registrar pago de orden
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [metodo]
+              properties:
+                metodo: { type: string, enum: [efectivo, tarjeta, mixto] }
+                monto_efectivo: { type: number }
+                monto_tarjeta: { type: number }
+                referencia_tarjeta: { type: string }
+      responses:
+        '200': { description: Pago registrado, orden cerrada }
+
+  # ═════════════════════════════════════════════
+  # CLIENTES
+  # ═════════════════════════════════════════════
+  /clientes:
+    get:
+      tags: [Clientes]
+      summary: Listar clientes con filtros y paginación
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Búsqueda por nombre, NIT, NRC, etc.
+        - name: pagina
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limite
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200': { description: Clientes con paginación }
+    post:
+      tags: [Clientes]
+      summary: Crear cliente
+      responses:
+        '201': { description: Cliente creado }
+
+  /clientes/buscar:
+    get:
+      tags: [Clientes]
+      summary: Búsqueda rápida para POS (máx 10 resultados)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2 }
+      responses:
+        '200': { description: Resultados }
+
+  /clientes/{id}:
+    get:
+      tags: [Clientes]
+      summary: Obtener cliente
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Cliente }
+    patch:
+      tags: [Clientes]
+      summary: Actualizar cliente
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Cliente actualizado }
+    delete:
+      tags: [Clientes]
+      summary: Desactivar cliente (soft delete)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Desactivado }
+
+  # ═════════════════════════════════════════════
+  # CAJA
+  # ═════════════════════════════════════════════
+  /caja/activa:
+    get:
+      tags: [Caja]
+      summary: Caja activa del tenant con movimientos recientes
+      parameters:
+        - name: sucursal_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Caja activa }
+        '404': { description: No hay caja abierta }
+
+  /caja/abrir:
+    post:
+      tags: [Caja]
+      summary: Abrir nuevo turno de caja
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [monto_inicial]
+              properties:
+                monto_inicial: { type: number, minimum: 0 }
+                sucursal_id: { type: string, format: uuid }
+                notas: { type: string }
+      responses:
+        '201': { description: Caja abierta }
+        '409': { description: Ya hay una caja abierta }
+
+  /caja/cerrar:
+    post:
+      tags: [Caja]
+      summary: Cerrar caja activa
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [monto_final]
+              properties:
+                monto_final: { type: number, minimum: 0 }
+                notas_cierre: { type: string }
+                sucursal_id: { type: string, format: uuid }
+      responses:
+        '200': { description: Caja cerrada }
+        '404': { description: No hay caja abierta }
+
+  /caja/movimiento:
+    post:
+      tags: [Caja]
+      summary: Registrar retiro o depósito manual
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tipo, monto, motivo]
+              properties:
+                tipo: { type: string, enum: [retiro, deposito] }
+                monto: { type: number, minimum: 0.01 }
+                motivo: { type: string }
+                sucursal_id: { type: string, format: uuid }
+      responses:
+        '201': { description: Movimiento registrado }
+
+  /caja/historial:
+    get:
+      tags: [Caja]
+      summary: Historial de cajas anteriores
+      parameters:
+        - name: estado
+          in: query
+          schema: { type: string, enum: [abierta, cerrada] }
+        - name: fecha_desde
+          in: query
+          schema: { type: string, format: date-time }
+        - name: fecha_hasta
+          in: query
+          schema: { type: string, format: date-time }
+        - name: pagina
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limite
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200': { description: Historial con paginación }
+
+  /caja/{id}/movimientos:
+    get:
+      tags: [Caja]
+      summary: Movimientos de una caja específica
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: pagina
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limite
+          in: query
+          schema: { type: integer, default: 50, maximum: 100 }
+      responses:
+        '200': { description: Movimientos con paginación }
