@@ -45,6 +45,23 @@ io.on('connection', (socket) => {
 module.exports.io = io;
 
 // ─────────────────────────────────────────────
+// Captura de errores no manejados (best-practices)
+// Evita que el proceso crashee sin registro ante excepciones fuera del ciclo req/res
+// ─────────────────────────────────────────────
+process.on('uncaughtException', (err) => {
+  logger.error('Excepción no capturada', { error: err.message, stack: err.stack });
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logger.error('Promesa rechazada no manejada', {
+    error: reason?.message || reason,
+    stack: reason?.stack,
+  });
+  process.exit(1);
+});
+
+// ─────────────────────────────────────────────
 // Arrancar el servidor
 // ─────────────────────────────────────────────
 const arrancar = async () => {

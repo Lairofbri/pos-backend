@@ -3,13 +3,13 @@
 // Usa pg con connection pooling para manejar múltiples requests simultáneos
 
 const { Pool } = require('pg');
-const { DATABASE_URL, ES_PRODUCCION } = require('./env');
+const { DATABASE_URL, ES_PRODUCCION, DB_SSL_REJECT_UNAUTHORIZED } = require('./env');
 const logger = require('../utils/logger');
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
   // En producción (Railway), siempre SSL
-  ssl: ES_PRODUCCION ? { rejectUnauthorized: false } : false,
+  ssl: ES_PRODUCCION ? { rejectUnauthorized: DB_SSL_REJECT_UNAUTHORIZED } : false,
   // Pool de conexiones: máximo 20 clientes simultáneos
   max: 20,
   // Tiempo máximo esperando una conexión libre: 30 segundos
