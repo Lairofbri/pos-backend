@@ -9,7 +9,7 @@ const { query } = require('../../config/database');
 const { JWT_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_SECRET, JWT_REFRESH_EXPIRES_IN } = require('../../config/env');
 const logger = require('../../utils/logger');
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12;
 // Bloqueo temporal después de N intentos fallidos de PIN
 const MAX_INTENTOS_PIN = 5;
 const MINUTOS_BLOQUEO  = 15;
@@ -215,7 +215,8 @@ const loginPin = async ({ tenantId, usuarioId, pin, dispositivo, ip }) => {
 };
 
 // ─────────────────────────────────────────────
-// Refresh: generar nuevo access token
+// Refresh: rotar refresh token + generar nuevo access token
+// Cada uso invalida el refresh token anterior y emite uno nuevo
 // ─────────────────────────────────────────────
 const refreshAccessToken = async ({ refreshToken }) => {
   // Verificar firma del refresh token
@@ -248,22 +249,29 @@ const refreshAccessToken = async ({ refreshToken }) => {
     throw { status: 403, mensaje: 'Cuenta inactiva.' };
   }
 
-  // Generar nuevo access token (el refresh token sigue siendo el mismo)
-  const nuevoAccessToken = jwt.sign(
-    {
-      sub:         sesion.usuario_id,
-      tenant_id:   sesion.tenant_id,
-      rol:         sesion.rol,
-      nombre:      sesion.nombre,
-      sucursal_id: sesion.sucursal_id,
-    },
-    JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN }
+  // Invalidar el refresh token anterior (rotación)
+  await query(
+    'UPDATE refresh_tokens SET activo = FALSE WHERE token_hash = $1',
+    [tokenHash]
   );
 
+  // Generar nuevo par de tokens
+  const usuario = {
+    id:          sesion.usuario_id,
+    tenant_id:   sesion.tenant_id,
+    rol:         sesion.rol,
+    nombre:      sesion.nombre,
+    apellido:    sesion.apellido,
+    sucursal_id: sesion.sucursal_id,
+  };
+
+  const { accessToken, refreshToken: nuevoRefreshToken } = generarTokens(usuario);
+  await guardarRefreshToken(usuario.id, usuario.tenant_id, nuevoRefreshToken, sesion.dispositivo, null);
+
   return {
-    access_token: nuevoAccessToken,
-    expires_in: JWT_EXPIRES_IN,
+    access_token:  accessToken,
+    refresh_token: nuevoRefreshToken,
+    expires_in:    JWT_EXPIRES_IN,
   };
 };
 
@@ -304,6 +312,12 @@ const cambiarPin = async ({ usuarioId, tenantId, pinActual, pinNuevo }) => {
     [nuevoPinHash, usuarioId]
   );
 
+  // Invalidar todos los refresh tokens activos del usuario
+  await query(
+    'UPDATE refresh_tokens SET activo = FALSE WHERE usuario_id = $1 AND activo = TRUE',
+    [usuarioId]
+  );
+
   logger.info('PIN cambiado', { usuario_id: usuarioId });
 };
 
@@ -329,6 +343,12 @@ const cambiarPassword = async ({ usuarioId, tenantId, passwordActual, passwordNu
   await query(
     'UPDATE usuarios SET password_hash = $1 WHERE id = $2',
     [nuevoHash, usuarioId]
+  );
+
+  // Invalidar todos los refresh tokens activos del usuario
+  await query(
+    'UPDATE refresh_tokens SET activo = FALSE WHERE usuario_id = $1 AND activo = TRUE',
+    [usuarioId]
   );
 
   logger.info('Password cambiado', { usuario_id: usuarioId });
@@ -438,6 +458,12 @@ const resetearPin = async ({ tenantId, usuarioId, pinNuevo }) => {
   await query(
     'UPDATE usuarios SET pin_hash = $1, intentos_pin = 0, bloqueado_hasta = NULL WHERE id = $2 AND tenant_id = $3',
     [pinHash, usuarioId, tenantId]
+  );
+
+  // Invalidar todos los refresh tokens activos del usuario
+  await query(
+    'UPDATE refresh_tokens SET activo = FALSE WHERE usuario_id = $1 AND activo = TRUE',
+    [usuarioId]
   );
 
   logger.info('PIN reseteado por administrador', { usuario_id: usuarioId });

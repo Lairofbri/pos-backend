@@ -144,8 +144,8 @@ const getMovimientos = async (req, res) => {
   if (req.query.pagina && (!Number.isInteger(paginaRaw) || paginaRaw < 1)) {
     return error(res, 'El parámetro pagina debe ser un número entero positivo.', 400);
   }
-  if (req.query.limite && (!Number.isInteger(limiteRaw) || limiteRaw < 1)) {
-    return error(res, 'El parámetro limite debe ser un número entero positivo.', 400);
+  if (req.query.limite && (!Number.isInteger(limiteRaw) || limiteRaw < 1 || limiteRaw > 100)) {
+    return error(res, 'El parámetro limite debe ser un número entero entre 1 y 100.', 400);
   }
 
   try {

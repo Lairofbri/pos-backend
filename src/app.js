@@ -26,6 +26,19 @@ const app = express();
 
 // Helmet: headers de seguridad HTTP
 app.use(helmet());
+app.use(helmet.hsts({ maxAge: 31536000, includeSubDomains: true }));
+app.use(helmet.contentSecurityPolicy({
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'"],
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    imgSrc: ["'self'", 'data:', 'https:'],
+    connectSrc: ["'self'"],
+    fontSrc: ["'self'"],
+    objectSrc: ["'none'"],
+    frameAncestors: ["'none'"],
+  },
+}));
 
 // CORS: solo orígenes de la configuración
 app.use(cors({
@@ -33,7 +46,7 @@ app.use(cors({
     // Permitir requests sin origin (Electron, apps móviles, Postman en dev)
     if (!origin) return callback(null, true);
     if (CORS_ORIGINS.includes(origin)) return callback(null, true);
-    callback(new Error(`Origen no permitido por CORS: ${origin}`));
+    callback(new Error('Origen no permitido por CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id'],
@@ -59,6 +72,7 @@ const limiteAuth = rateLimit({
 });
 app.use('/api/auth/login', limiteAuth);
 app.use('/api/auth/login-pin', limiteAuth);
+app.use('/api/usuarios/pin-list', limiteAuth);
 
 // Parse JSON body
 app.use(express.json({ limit: '2mb' }));

@@ -25,10 +25,11 @@ module.exports = {
 
   // Base de datos
   DATABASE_URL: requerida('DATABASE_URL'),
+  DB_SSL_REJECT_UNAUTHORIZED: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
 
   // JWT
   JWT_SECRET: requerida('JWT_SECRET'),
-  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '8h',
+  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '1h',
   JWT_REFRESH_SECRET: requerida('JWT_REFRESH_SECRET'),
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
 

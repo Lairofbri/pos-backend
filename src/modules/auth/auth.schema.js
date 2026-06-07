@@ -9,8 +9,8 @@ const Joi = require('joi');
 // ─────────────────────────────────────────────
 const loginEmailSchema = Joi.object({
   email: Joi.string().email({ tlds: { allow: false } }).lowercase().required(),
-  password: Joi.string().min(6).required().messages({
-    'string.min': 'La contraseña debe tener al menos 6 caracteres.',
+  password: Joi.string().min(8).required().messages({
+    'string.min': 'La contraseña debe tener al menos 8 caracteres.',
     'any.required': 'La contraseña es requerida.',
   }),
   // Información del dispositivo para registrar el refresh token
@@ -27,10 +27,10 @@ const loginPinSchema = Joi.object({
     'any.required': 'El ID de usuario es requerido.',
   }),
   pin: Joi.string()
-    .pattern(/^\d{4,6}$/)
+    .pattern(/^\d{6}$/)
     .required()
     .messages({
-      'string.pattern.base': 'El PIN debe tener entre 4 y 6 dígitos numéricos.',
+      'string.pattern.base': 'El PIN debe tener exactamente 6 dígitos numéricos.',
       'any.required': 'El PIN es requerido.',
     }),
   dispositivo: Joi.string().max(255).optional(),
@@ -50,17 +50,17 @@ const refreshTokenSchema = Joi.object({
 // ─────────────────────────────────────────────
 const cambiarPinSchema = Joi.object({
   pin_actual: Joi.string()
-    .pattern(/^\d{4,6}$/)
+    .pattern(/^\d{6}$/)
     .required()
     .messages({
-      'string.pattern.base': 'El PIN actual debe tener entre 4 y 6 dígitos.',
+      'string.pattern.base': 'El PIN actual debe tener exactamente 6 dígitos.',
       'any.required': 'El PIN actual es requerido.',
     }),
   pin_nuevo: Joi.string()
-    .pattern(/^\d{4,6}$/)
+    .pattern(/^\d{6}$/)
     .required()
     .messages({
-      'string.pattern.base': 'El PIN nuevo debe tener entre 4 y 6 dígitos.',
+      'string.pattern.base': 'El PIN nuevo debe tener exactamente 6 dígitos.',
       'any.required': 'El PIN nuevo es requerido.',
     }),
 });
@@ -69,14 +69,14 @@ const cambiarPinSchema = Joi.object({
 // Cambio de password (solo admin, vía panel web)
 // ─────────────────────────────────────────────
 const cambiarPasswordSchema = Joi.object({
-  password_actual: Joi.string().min(6).required(),
+  password_actual: Joi.string().min(8).required(),
   password_nuevo: Joi.string()
     .min(8)
-    .pattern(/^(?=.*[A-Z])(?=.*\d)/)
+    .pattern(/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9])/)
     .required()
     .messages({
       'string.pattern.base':
-        'El password nuevo debe tener al menos 8 caracteres, una mayúscula y un número.',
+        'El password nuevo debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial.',
     }),
 });
 
@@ -88,12 +88,15 @@ const crearUsuarioSchema = Joi.object({
   apellido: Joi.string().min(2).max(100).optional().allow(''),
   email: Joi.string().email({ tlds: { allow: false } }).lowercase().optional().allow('', null),
   pin: Joi.string()
-    .pattern(/^\d{4,6}$/)
+    .pattern(/^\d{6}$/)
     .required()
     .messages({
-      'string.pattern.base': 'El PIN debe tener entre 4 y 6 dígitos numéricos.',
+      'string.pattern.base': 'El PIN debe tener exactamente 6 dígitos numéricos.',
     }),
-  password: Joi.string().min(8).optional().allow('', null), // Solo si es admin con acceso web
+  password: Joi.string().min(8).pattern(/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9])/).optional().allow('', null).messages({
+    'string.min': 'El password debe tener al menos 8 caracteres.',
+    'string.pattern.base': 'El password debe contener mayúscula, minúscula, número y carácter especial.',
+  }), // Solo si es admin con acceso web
   rol: Joi.string()
     .valid('administrador', 'cajero', 'mesero')
     .required()

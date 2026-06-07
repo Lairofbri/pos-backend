@@ -95,8 +95,12 @@ const refresh = async (req, res) => {
 // POST /auth/logout
 // ─────────────────────────────────────────────
 const logout = async (req, res) => {
+  if (!req.body?.refresh_token) {
+    return error(res, 'El refresh_token es requerido para cerrar sesión.', 400);
+  }
+
   try {
-    await authService.logout({ refreshToken: req.body?.refresh_token });
+    await authService.logout({ refreshToken: req.body.refresh_token });
     return exito(res, null, 'Sesión cerrada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
@@ -257,8 +261,8 @@ const resetearPin = async (req, res) => {
   }
 
   const pinNuevo = req.body?.pin_nuevo;
-  if (!pinNuevo || !/^\d{4,6}$/.test(String(pinNuevo))) {
-    return error(res, 'pin_nuevo debe tener entre 4 y 6 dígitos numéricos.', 400);
+  if (!pinNuevo || !/^\d{6}$/.test(String(pinNuevo))) {
+    return error(res, 'pin_nuevo debe tener exactamente 6 dígitos numéricos.', 400);
   }
 
   try {
