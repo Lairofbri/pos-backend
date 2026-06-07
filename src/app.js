@@ -15,6 +15,7 @@ const productosRoutes = require('./modules/productos/productos.routes');
 const posRoutes       = require('./modules/pos/pos.routes');
 const clientesRoutes  = require('./modules/clientes/clientes.routes');
 const cajaRoutes      = require('./modules/caja/caja.routes');
+const permisosRoutes  = require('./modules/permisos/permisos.routes');
 // Aquí se irán agregando los demás módulos:
 
 
@@ -104,7 +105,7 @@ app.use('/api', productosRoutes);
 app.use('/api', posRoutes);
 app.use('/api', clientesRoutes);
 app.use('/api', cajaRoutes);
-
+app.use('/api', permisosRoutes);
 
 // ─────────────────────────────────────────────
 // 404 — Ruta no encontrada
