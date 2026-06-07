@@ -13,8 +13,6 @@ const loginEmailSchema = Joi.object({
     'string.min': 'La contraseña debe tener al menos 8 caracteres.',
     'any.required': 'La contraseña es requerida.',
   }),
-  // Información del dispositivo para registrar el refresh token
-  dispositivo: Joi.string().max(255).optional(),
 });
 
 // ─────────────────────────────────────────────
@@ -33,7 +31,6 @@ const loginPinSchema = Joi.object({
       'string.pattern.base': 'El PIN debe tener exactamente 6 dígitos numéricos.',
       'any.required': 'El PIN es requerido.',
     }),
-  dispositivo: Joi.string().max(255).optional(),
 });
 
 // ─────────────────────────────────────────────

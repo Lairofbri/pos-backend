@@ -1,7 +1,6 @@
 # Sub-proyecto 1: Roles y Permisos Granulares
 
 **Fecha:** 2026-06-07
-**Branch:** `feat/modulo-7-dte`
 **Dependencia:** Ninguna (fundación para los demás sub-proyectos)
 
 ---

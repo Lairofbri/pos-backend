@@ -67,7 +67,6 @@ const loginPin = async (req, res) => {
       tenantId,
       usuarioId:   value.usuario_id,
       pin:         value.pin,
-      dispositivo: value.dispositivo,
       ip:          req.ip,
     });
     return exito(res, resultado, 'Sesión iniciada exitosamente.');

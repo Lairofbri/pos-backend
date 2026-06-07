@@ -77,7 +77,7 @@ const formatearUsuario = (row) => ({
 // ─────────────────────────────────────────────
 // Login con email + password (panel web admin)
 // ─────────────────────────────────────────────
-const loginEmail = async ({ email, password, dispositivo, ip }) => {
+const loginEmail = async ({ email, password, ip }) => {
   // Buscar usuario activo por email (cross-tenant — email es único global)
   const { rows } = await query(
     `SELECT u.*, t.activo as tenant_activo
@@ -114,7 +114,7 @@ const loginEmail = async ({ email, password, dispositivo, ip }) => {
   );
 
   const { accessToken, refreshToken } = generarTokens(usuario);
-  await guardarRefreshToken(usuario.id, usuario.tenant_id, refreshToken, dispositivo, ip);
+  await guardarRefreshToken(usuario.id, usuario.tenant_id, refreshToken, null, ip);
 
   logger.info('Login email exitoso', { usuario_id: usuario.id, rol: usuario.rol });
 
@@ -130,7 +130,7 @@ const loginEmail = async ({ email, password, dispositivo, ip }) => {
 // Login con PIN (estaciones POS)
 // El tenant_id viene del header X-Tenant-Id (middleware)
 // ─────────────────────────────────────────────
-const loginPin = async ({ tenantId, usuarioId, pin, dispositivo, ip }) => {
+const loginPin = async ({ tenantId, usuarioId, pin, ip }) => {
   // Buscar usuario dentro del tenant
   const { rows } = await query(
     `SELECT u.*, t.activo as tenant_activo
@@ -202,7 +202,7 @@ const loginPin = async ({ tenantId, usuarioId, pin, dispositivo, ip }) => {
   );
 
   const { accessToken, refreshToken } = generarTokens(usuario);
-  await guardarRefreshToken(usuario.id, usuario.tenant_id, refreshToken, dispositivo, ip);
+  await guardarRefreshToken(usuario.id, usuario.tenant_id, refreshToken, null, ip);
 
   logger.info('Login PIN exitoso', { usuario_id: usuario.id, rol: usuario.rol });
 
