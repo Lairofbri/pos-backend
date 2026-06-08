@@ -128,6 +128,44 @@ const sembrarPermisosTenant = async (tenantId) => {
   logger.info('Permisos default sembrados para tenant', { tenant_id: tenantId, roles: roles.length });
 };
 
+// ─────────────────────────────────────────────
+// Menú dinámico del sidebar
+// ─────────────────────────────────────────────
+
+/**
+ * Inserta los menús default para un tenant
+ * Usa IDs fijos para que el seed sea idempotente
+ */
+const sembrarMenusTenant = async (tenantId) => {
+  const menus = [
+    { id: '00000000-0000-0000-0000-000000000001', parent_id: null,     titulo: 'POS',             icono: 'shopping-cart', ruta: '/pos',                orden: 1, permiso_codigo: 'ordenes.ver' },
+    { id: '00000000-0000-0000-0000-000000000002', parent_id: null,     titulo: 'Cocina',          icono: 'chef-hat',      ruta: '/cocina',             orden: 2, permiso_codigo: 'items.estado' },
+    { id: '00000000-0000-0000-0000-000000000003', parent_id: null,     titulo: 'Administración',  icono: 'settings',      ruta: null,                   orden: 3, permiso_codigo: null },
+    { id: '00000000-0000-0000-0000-000000000004', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Productos',  icono: 'package',    ruta: '/admin/productos',     orden: 1, permiso_codigo: 'productos.ver' },
+    { id: '00000000-0000-0000-0000-000000000005', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Combos',     icono: 'gift',       ruta: '/admin/combos',        orden: 2, permiso_codigo: null },
+    { id: '00000000-0000-0000-0000-000000000006', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Usuarios',   icono: 'users',      ruta: '/admin/usuarios',      orden: 3, permiso_codigo: 'usuarios.ver' },
+    { id: '00000000-0000-0000-0000-000000000007', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Roles',      icono: 'shield',     ruta: '/admin/roles',         orden: 4, permiso_codigo: 'roles.configurar' },
+    { id: '00000000-0000-0000-0000-000000000008', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Caja',       icono: 'dollar-sign',ruta: '/admin/caja',           orden: 5, permiso_codigo: 'caja.historial' },
+    { id: '00000000-0000-0000-0000-000000000009', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Clientes',   icono: 'users',      ruta: '/admin/clientes',      orden: 6, permiso_codigo: 'clientes.ver' },
+  ];
+
+  for (const m of menus) {
+    await query(
+      `INSERT INTO menus (id, tenant_id, parent_id, titulo, icono, ruta, orden, permiso_codigo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (id) DO UPDATE SET
+         titulo = EXCLUDED.titulo,
+         icono = EXCLUDED.icono,
+         ruta = EXCLUDED.ruta,
+         orden = EXCLUDED.orden,
+         permiso_codigo = EXCLUDED.permiso_codigo`,
+      [m.id, tenantId, m.parent_id, m.titulo, m.icono, m.ruta, m.orden, m.permiso_codigo]
+    );
+  }
+
+  logger.info('Menús default sembrados para tenant', { tenant_id: tenantId, menus: menus.length });
+};
+
 const ejecutarSeed = async () => {
   logger.info('Iniciando seed de datos iniciales...');
   await verificarConexion();
@@ -166,6 +204,9 @@ const ejecutarSeed = async () => {
   // 4. Sembrar permisos default para los 5 roles del tenant demo (siempre, idempotente)
   await sembrarPermisosTenant(TENANT_ID);
 
+  // 5. Sembrar menús default del sidebar (siempre, idempotente)
+  await sembrarMenusTenant(TENANT_ID);
+
   logger.info('Seed completado exitosamente.');
   logger.info('─────────────────────────────────────');
   logger.info('Credenciales del administrador demo:');
@@ -187,4 +228,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { PERMISOS_DEFAULT, sembrarPermisosRol, sembrarPermisosTenant };
+module.exports = { PERMISOS_DEFAULT, sembrarPermisosRol, sembrarPermisosTenant, sembrarMenusTenant };

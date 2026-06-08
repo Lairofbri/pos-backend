@@ -18,6 +18,7 @@ const cajaRoutes      = require('./modules/caja/caja.routes');
 const permisosRoutes  = require('./modules/permisos/permisos.routes');
 const combosRoutes    = require('./modules/combos/combos.routes');
 const cocinaRoutes    = require('./modules/cocina/cocina.routes');
+const menusRoutes     = require('./modules/menus/menus.routes');
 // Aquí se irán agregando los demás módulos:
 
 
@@ -129,7 +130,8 @@ app.use('/api', clientesRoutes);
 app.use('/api', cajaRoutes);
 app.use('/api', permisosRoutes);
 app.use('/api', combosRoutes);
-app.use('/api', cocinaRoutes);// ─────────────────────────────────────────────
+app.use('/api', cocinaRoutes);
+app.use('/api', menusRoutes);// ─────────────────────────────────────────────
 // 404 — Ruta no encontrada
 // ─────────────────────────────────────────────
 app.use((_req, res) => {
