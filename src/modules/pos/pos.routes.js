@@ -62,6 +62,19 @@ router.patch('/ordenes/:id/items/:itemId', todosLosRoles, controller.actualizarI
 router.delete('/ordenes/:id/items/:itemId', adminOCajero, controller.eliminarItem);
 
 // ─────────────────────────────────────────────
+// DIVIDIR CUENTA Y TRANSFERIR ITEMS
+// ─────────────────────────────────────────────
+
+// Dividir orden en dos cuentas — admin y cajero
+router.post('/ordenes/:id/split', adminOCajero, controller.splitOrden);
+
+// Transferir items a otra orden — admin y cajero
+router.post('/ordenes/:id/transferir', adminOCajero, controller.transferirItems);
+
+// Cambiar mesa de una orden — admin y cajero
+router.patch('/ordenes/:id/cambiar-mesa', adminOCajero, controller.cambiarMesa);
+
+// ─────────────────────────────────────────────
 // PAGOS
 // ─────────────────────────────────────────────
 
