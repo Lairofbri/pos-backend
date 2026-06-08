@@ -33,7 +33,7 @@ const calcularTotales = (subtotal, porcentajeDescuento = 0) => {
 const recalcularOrden = async (client, ordenId, tenantId) => {
   // Sumar subtotales de todos los items activos
   const { rows: itemsRows } = await client.query(
-    `SELECT COALESCE(SUM(subtotal), 0) as subtotal
+    `SELECT COALESCE(SUM(subtotal - (subtotal * COALESCE(descuento_porcentaje, 0) / 100)), 0) as subtotal
      FROM orden_items
      WHERE orden_id = $1 AND tenant_id = $2 AND estado != 'cancelado'`,
     [ordenId, tenantId]
@@ -89,6 +89,35 @@ const validarTransicion = (estadoActual, estadoNuevo) => {
 // MESAS
 // ═════════════════════════════════════════════
 
+/**
+ * Adjunta la orden activa (si existe) a una mesa
+ * Acepta un array o un objeto individual — devuelve el mismo tipo
+ */
+const adjuntarOrdenActiva = async (mesas) => {
+  const esArray = Array.isArray(mesas);
+  const lista = esArray ? mesas : [mesas];
+  if (lista.length === 0) return mesas;
+
+  const mesaIds = lista.map(m => m.id);
+  const { rows: ordenes } = await query(
+    `SELECT mesa_id, id as orden_id, creado_en as orden_creada_en, total as orden_total
+     FROM ordenes
+     WHERE mesa_id = ANY($1::uuid[]) AND estado NOT IN ('pagada', 'cancelada')`,
+    [mesaIds]
+  );
+
+  const ordenPorMesa = {};
+  for (const o of ordenes) {
+    ordenPorMesa[o.mesa_id] = { id: o.orden_id, creado_en: o.orden_creada_en, total: o.orden_total };
+  }
+
+  for (const mesa of lista) {
+    mesa.orden_activa = ordenPorMesa[mesa.id] || null;
+  }
+
+  return mesas;
+};
+
 const listarMesas = async ({ tenantId, soloActivas = true }) => {
   const condicion = soloActivas
     ? 'WHERE tenant_id = $1 AND activo = TRUE'
@@ -101,6 +130,8 @@ const listarMesas = async ({ tenantId, soloActivas = true }) => {
      ORDER BY numero ASC`,
     [tenantId]
   );
+
+  await adjuntarOrdenActiva(rows);
   return rows;
 };
 
@@ -111,7 +142,8 @@ const obtenerMesa = async ({ tenantId, mesaId }) => {
     [mesaId, tenantId]
   );
   if (rows.length === 0) throw { status: 404, mensaje: 'Mesa no encontrada.' };
-  return rows[0];
+  const mesa = await adjuntarOrdenActiva(rows[0]);
+  return mesa;
 };
 
 const crearMesa = async ({ tenantId, datos }) => {
@@ -242,7 +274,9 @@ const obtenerOrden = async ({ tenantId, ordenId }) => {
   const { rows: items } = await query(
     `SELECT
        id, producto_id, nombre_producto, precio_unitario,
-       cantidad, subtotal, estado, notas, creado_en
+       cantidad, subtotal, COALESCE(descuento_porcentaje, 0) as descuento_porcentaje,
+       (subtotal - (subtotal * COALESCE(descuento_porcentaje, 0) / 100)) as subtotal_con_descuento,
+       estado, notas, enviado_en, creado_en
      FROM orden_items
      WHERE orden_id = $1 AND tenant_id = $2
      ORDER BY creado_en ASC`,
@@ -431,6 +465,16 @@ const agregarItem = async ({ tenantId, ordenId, datos }) => {
     throw { status: 400, mensaje: `No se pueden agregar items a una orden "${orden.estado}".` };
   }
 
+  // Verificar si es un combo
+  const { rows: comboRows } = await query(
+    'SELECT id, nombre, precio, activo FROM combos WHERE id = $1 AND tenant_id = $2',
+    [datos.producto_id, tenantId]
+  );
+
+  if (comboRows.length > 0) {
+    return agregarComboAOrden({ tenantId, ordenId, datos, combo: comboRows[0], orden });
+  }
+
   // Obtener datos del producto — verificar que existe en el tenant
   const { rows: productoRows } = await query(
     `SELECT id, nombre, precio, activo, tiene_stock, stock_actual
@@ -466,9 +510,9 @@ const agregarItem = async ({ tenantId, ordenId, datos }) => {
     // Insertar item — snapshot del nombre y precio actual
     const { rows } = await client.query(
       `INSERT INTO orden_items
-         (orden_id, tenant_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, notas)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, estado, notas`,
+         (orden_id, tenant_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, notas, descuento_porcentaje)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, descuento_porcentaje, estado, notas`,
       [
         ordenId,
         tenantId,
@@ -478,6 +522,7 @@ const agregarItem = async ({ tenantId, ordenId, datos }) => {
         datos.cantidad,
         subtotalItem,
         datos.notas || null,
+        datos.descuento_porcentaje ?? 0,
       ]
     );
 
@@ -510,7 +555,87 @@ const agregarItem = async ({ tenantId, ordenId, datos }) => {
   }
 };
 
-const actualizarItem = async ({ tenantId, ordenId, itemId, datos }) => {
+/**
+ * Expande un combo en items individuales dentro de la orden
+ */
+const agregarComboAOrden = async ({ tenantId, ordenId, datos, combo }) => {
+  const { rows: componentes } = await query(
+    `SELECT cp.producto_id, cp.cantidad, p.nombre, p.precio, p.tiene_stock, p.stock_actual, p.activo
+     FROM combo_productos cp
+     JOIN productos p ON p.id = cp.producto_id
+     WHERE cp.combo_id = $1`,
+    [combo.id]
+  );
+
+  if (componentes.length === 0) {
+    throw { status: 400, mensaje: `El combo "${combo.nombre}" no tiene productos asignados.` };
+  }
+
+  // Verificar stock y disponibilidad de cada componente
+  for (const c of componentes) {
+    if (!c.activo) {
+      throw { status: 400, mensaje: `"${c.nombre}" no está disponible actualmente.` };
+    }
+    const cantidadTotal = c.cantidad * datos.cantidad;
+    if (c.tiene_stock && c.stock_actual < cantidadTotal) {
+      throw {
+        status: 400,
+        mensaje: `Stock insuficiente para "${c.nombre}". Necesita ${cantidadTotal}, hay ${c.stock_actual}.`,
+      };
+    }
+  }
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    const itemsInsertados = [];
+
+    for (const c of componentes) {
+      const cantidadTotal = c.cantidad * datos.cantidad;
+      const subtotal = Number((c.precio * cantidadTotal).toFixed(2));
+
+      const { rows } = await client.query(
+        `INSERT INTO orden_items
+           (orden_id, tenant_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, notas, descuento_porcentaje)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, descuento_porcentaje, estado, notas`,
+        [
+          ordenId, tenantId, c.producto_id, c.nombre, c.precio,
+          cantidadTotal, subtotal, datos.notas || null, datos.descuento_porcentaje ?? 0,
+        ]
+      );
+
+      if (c.tiene_stock) {
+        await client.query(
+          'UPDATE productos SET stock_actual = stock_actual - $1 WHERE id = $2',
+          [cantidadTotal, c.producto_id]
+        );
+      }
+
+      itemsInsertados.push(rows[0]);
+    }
+
+    const totales = await recalcularOrden(client, ordenId, tenantId);
+
+    await client.query('COMMIT');
+
+    logger.info('Combo agregado a orden', {
+      orden_id: ordenId,
+      combo: combo.nombre,
+      items: componentes.length,
+    });
+
+    return { items: itemsInsertados, totales, es_combo: true };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+const actualizarItem = async ({ tenantId, ordenId, itemId, usuarioId, datos }) => {
   const orden = await obtenerOrden({ tenantId, ordenId });
 
   if (['pagada', 'cancelada'].includes(orden.estado)) {
@@ -563,7 +688,16 @@ const actualizarItem = async ({ tenantId, ordenId, itemId, datos }) => {
     }
 
     if (datos.notas  !== undefined) { campos.push(`notas = $${idx++}`);  valores.push(datos.notas); }
-    if (datos.estado !== undefined) { campos.push(`estado = $${idx++}`); valores.push(datos.estado); }
+    if (datos.estado !== undefined) {
+      campos.push(`estado = $${idx++}`);
+      valores.push(datos.estado);
+      // Si se envía a cocina, registrar timestamp y quien lo envió
+      if (datos.estado === 'en_proceso' && itemActual.estado !== 'en_proceso') {
+        campos.push(`enviado_en = $${idx++}`, `enviado_por = $${idx++}`);
+        valores.push(new Date(), usuarioId);
+      }
+    }
+    if (datos.descuento_porcentaje !== undefined) { campos.push(`descuento_porcentaje = $${idx++}`); valores.push(datos.descuento_porcentaje); }
 
     if (campos.length > 0) {
       valores.push(itemId);
@@ -576,6 +710,31 @@ const actualizarItem = async ({ tenantId, ordenId, itemId, datos }) => {
     const totales = await recalcularOrden(client, ordenId, tenantId);
 
     await client.query('COMMIT');
+
+    // Emitir evento socket.io para cocina si cambió estado
+    if (datos.estado) {
+      try {
+        const { io } = require('../../server');
+        const sala = `tenant:${tenantId}`;
+        if (datos.estado === 'en_proceso' && itemActual.estado !== 'en_proceso') {
+          io.to(sala).emit('cocina:nuevo-item', {
+            item_id: itemId,
+            orden_id: ordenId,
+            nombre_producto: itemActual.nombre_producto,
+            cantidad: datos.cantidad || itemActual.cantidad,
+            notas: datos.notas || itemActual.notas,
+          });
+        }
+        if (datos.estado === 'listo' && itemActual.estado !== 'listo') {
+          io.to(sala).emit('cocina:item-listo', {
+            item_id: itemId,
+            orden_id: ordenId,
+            nombre_producto: itemActual.nombre_producto,
+          });
+        }
+      } catch (_e) { /* socket.io no disponible */ }
+    }
+
     logger.info('Item actualizado', { item_id: itemId, orden_id: ordenId });
     return totales;
   } catch (err) {
@@ -630,6 +789,212 @@ const eliminarItem = async ({ tenantId, ordenId, itemId }) => {
     await client.query('COMMIT');
     logger.info('Item eliminado de orden', { item_id: itemId, orden_id: ordenId });
     return totales;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// ═════════════════════════════════════════════
+// DIVIDIR CUENTA Y TRANSFERIR ITEMS
+// ═════════════════════════════════════════════
+
+const moveItemsBetweenOrders = async ({ tenantId, ordenOrigenId, items, ordenDestinoId }) => {
+  // Verificar que los items pertenezcan a la orden origen
+  const { rows: itemsVerificar } = await query(
+    `SELECT id, estado FROM orden_items
+     WHERE id = ANY($1::uuid[]) AND orden_id = $2 AND tenant_id = $3`,
+    [items, ordenOrigenId, tenantId]
+  );
+
+  if (itemsVerificar.length !== items.length) {
+    throw { status: 400, mensaje: 'Uno o más items no pertenecen a la orden origen o no existen.' };
+  }
+
+  // Verificar que ningún item esté cancelado
+  for (const item of itemsVerificar) {
+    if (item.estado === 'cancelado') {
+      throw { status: 400, mensaje: 'No se pueden mover items cancelados.' };
+    }
+  }
+};
+
+/**
+ * POST /ordenes/:id/split
+ * Crea una nueva orden y mueve los items seleccionados a ella
+ */
+const splitOrden = async ({ tenantId, usuarioId, ordenId, datos }) => {
+  const orden = await obtenerOrden({ tenantId, ordenId });
+
+  if (['pagada', 'cancelada'].includes(orden.estado)) {
+    throw { status: 400, mensaje: `No se puede dividir una orden "${orden.estado}".` };
+  }
+
+  if (orden.items.length <= 1) {
+    throw { status: 400, mensaje: 'La orden debe tener al menos 2 items para dividir.' };
+  }
+
+  const { items: itemIds, tipo, mesa_id, notas } = datos;
+
+  await moveItemsBetweenOrders({ tenantId, ordenOrigenId: ordenId, items: itemIds });
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    // Crear nueva orden
+    const { rows: ordenRows } = await client.query(
+      `INSERT INTO ordenes
+         (tenant_id, tipo, mesa_id, usuario_id, notas)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, tipo, estado, numero_orden, creado_en`,
+      [tenantId, tipo || 'rapido', mesa_id || null, usuarioId, notas || null]
+    );
+
+    const nuevaOrdenId = ordenRows[0].id;
+
+    // Mover los items seleccionados a la nueva orden
+    await client.query(
+      `UPDATE orden_items SET orden_id = $1 WHERE id = ANY($2::uuid[])`,
+      [nuevaOrdenId, itemIds]
+    );
+
+    // Recalcular ambas órdenes
+    const totalesOrigen = await recalcularOrden(client, ordenId, tenantId);
+    const totalesDestino = await recalcularOrden(client, nuevaOrdenId, tenantId);
+
+    await client.query('COMMIT');
+
+    logger.info('Orden dividida', {
+      orden_origen: ordenId,
+      nueva_orden: nuevaOrdenId,
+      items_movidos: itemIds.length,
+    });
+
+    return {
+      orden_original: { id: ordenId, ...totalesOrigen },
+      nueva_orden: { id: nuevaOrdenId, ...ordenRows[0], ...totalesDestino },
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * POST /ordenes/:id/transferir
+ * Mueve items a una orden existente
+ */
+const transferirItems = async ({ tenantId, ordenId, datos }) => {
+  const ordenOrigen = await obtenerOrden({ tenantId, ordenId });
+
+  if (['pagada', 'cancelada'].includes(ordenOrigen.estado)) {
+    throw { status: 400, mensaje: `No se puede transferir desde una orden "${ordenOrigen.estado}".` };
+  }
+
+  const ordenDestino = await obtenerOrden({ tenantId, ordenId: datos.orden_destino_id });
+
+  if (['pagada', 'cancelada'].includes(ordenDestino.estado)) {
+    throw { status: 400, mensaje: `No se puede transferir a una orden "${ordenDestino.estado}".` };
+  }
+
+  const { items: itemIds, orden_destino_id } = datos;
+
+  await moveItemsBetweenOrders({ tenantId, ordenOrigenId: ordenId, items: itemIds });
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    // Mover los items
+    await client.query(
+      `UPDATE orden_items SET orden_id = $1 WHERE id = ANY($2::uuid[])`,
+      [orden_destino_id, itemIds]
+    );
+
+    // Recalcular ambas órdenes
+    const totalesOrigen = await recalcularOrden(client, ordenId, tenantId);
+    const totalesDestino = await recalcularOrden(client, orden_destino_id, tenantId);
+
+    await client.query('COMMIT');
+
+    logger.info('Items transferidos', {
+      orden_origen: ordenId,
+      orden_destino: orden_destino_id,
+      items_movidos: itemIds.length,
+    });
+
+    return {
+      orden_origen: { id: ordenId, ...totalesOrigen },
+      orden_destino: { id: orden_destino_id, ...totalesDestino },
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// ═════════════════════════════════════════════
+// CAMBIAR MESA DE UNA ORDEN
+// ═════════════════════════════════════════════
+
+/**
+ * PATCH /ordenes/:id/cambiar-mesa
+ * Cambia la mesa asignada a una orden
+ */
+const cambiarMesa = async ({ tenantId, ordenId, mesaId }) => {
+  const orden = await obtenerOrden({ tenantId, ordenId });
+
+  if (['pagada', 'cancelada'].includes(orden.estado)) {
+    throw { status: 400, mensaje: `No se puede cambiar de mesa una orden "${orden.estado}".` };
+  }
+
+  // Verificar que la mesa destino existe y está disponible
+  const mesaDestino = await obtenerMesa({ tenantId, mesaId });
+
+  if (!mesaDestino.activo) {
+    throw { status: 400, mensaje: `La mesa "${mesaDestino.nombre}" está inactiva.` };
+  }
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    // Liberar mesa anterior
+    if (orden.mesa_id) {
+      await client.query(
+        'UPDATE mesas SET estado = $1 WHERE id = $2 AND tenant_id = $3',
+        ['disponible', orden.mesa_id, tenantId]
+      );
+    }
+
+    // Asignar nueva mesa
+    await client.query(
+      'UPDATE ordenes SET mesa_id = $1 WHERE id = $2',
+      [mesaId, ordenId]
+    );
+
+    // Marcar mesa como ocupada
+    await client.query(
+      'UPDATE mesas SET estado = $1 WHERE id = $2 AND tenant_id = $3',
+      ['ocupada', mesaId, tenantId]
+    );
+
+    await client.query('COMMIT');
+
+    logger.info('Mesa cambiada', {
+      orden_id: ordenId,
+      mesa_anterior: orden.mesa_id,
+      mesa_nueva: mesaId,
+    });
+
+    return { orden_id: ordenId, mesa_id: mesaId };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -738,6 +1103,11 @@ module.exports = {
   agregarItem,
   actualizarItem,
   eliminarItem,
+  // Split y transferir
+  splitOrden,
+  transferirItems,
+  // Cambiar mesa
+  cambiarMesa,
   // Pagos
   registrarPago,
 };

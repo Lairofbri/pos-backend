@@ -110,6 +110,7 @@ const agregarItemSchema = Joi.object({
     'any.required': 'La cantidad es requerida.',
   }),
   notas: Joi.string().max(255).optional().allow('', null),
+  descuento_porcentaje: Joi.number().min(0).max(100).optional().default(0),
 });
 
 const actualizarItemSchema = Joi.object({
@@ -123,7 +124,55 @@ const actualizarItemSchema = Joi.object({
     .messages({
       'any.only': 'Estado de item inválido.',
     }),
+  descuento_porcentaje: Joi.number().min(0).max(100).optional(),
 }).min(1);
+
+// ─────────────────────────────────────────────
+// CAMBIAR MESA DE UNA ORDEN
+// ─────────────────────────────────────────────
+
+const cambiarMesaSchema = Joi.object({
+  mesa_id: Joi.string().uuid().required().messages({
+    'any.required': 'El ID de la mesa destino es requerido.',
+    'string.uuid': 'El ID de mesa no es válido.',
+  }),
+});
+
+// ─────────────────────────────────────────────
+// DIVIDIR CUENTA Y TRANSFERIR ITEMS
+// ─────────────────────────────────────────────
+
+const splitOrdenSchema = Joi.object({
+  items: Joi.array()
+    .items(Joi.string().uuid())
+    .min(1)
+    .required()
+    .messages({
+      'array.min': 'Debe seleccionar al menos un item.',
+      'any.required': 'La lista de items es requerida.',
+    }),
+  tipo: Joi.string()
+    .valid('rapido', 'mesa', 'delivery')
+    .optional()
+    .default('rapido'),
+  mesa_id: Joi.string().uuid().optional().allow(null),
+  notas: Joi.string().max(255).optional().allow('', null),
+});
+
+const transferirItemsSchema = Joi.object({
+  items: Joi.array()
+    .items(Joi.string().uuid())
+    .min(1)
+    .required()
+    .messages({
+      'array.min': 'Debe seleccionar al menos un item.',
+      'any.required': 'La lista de items es requerida.',
+    }),
+  orden_destino_id: Joi.string().uuid().required().messages({
+    'any.required': 'El ID de la orden destino es requerido.',
+    'string.uuid': 'El ID de la orden destino no es válido.',
+  }),
+});
 
 // ─────────────────────────────────────────────
 // PAGOS
@@ -185,4 +234,7 @@ module.exports = {
   actualizarItemSchema,
   registrarPagoSchema,
   filtrosOrdenesSchema,
+  splitOrdenSchema,
+  transferirItemsSchema,
+  cambiarMesaSchema,
 };

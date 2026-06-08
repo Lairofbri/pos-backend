@@ -13,6 +13,9 @@ const {
   actualizarItemSchema,
   registrarPagoSchema,
   filtrosOrdenesSchema,
+  splitOrdenSchema,
+  transferirItemsSchema,
+  cambiarMesaSchema,
 } = require('./pos.schema');
 const {
   exito,
@@ -299,6 +302,7 @@ const actualizarItem = async (req, res) => {
       tenantId: req.usuario.tenant_id,
       ordenId:  req.params.id,
       itemId:   req.params.itemId,
+      usuarioId: req.usuario.id,
       datos:    value,
     });
     return exito(res, totales, 'Item actualizado.');
@@ -326,6 +330,95 @@ const eliminarItem = async (req, res) => {
       itemId:   req.params.itemId,
     });
     return exito(res, totales, 'Item eliminado de la orden.');
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
+// ═════════════════════════════════════════════
+// DIVIDIR CUENTA Y TRANSFERIR ITEMS
+// ═════════════════════════════════════════════
+
+/**
+ * POST /api/ordenes/:id/split
+ * Fix CUBIC: valida UUID antes de dividir
+ */
+const splitOrden = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de orden no tiene un formato UUID válido.', 400);
+  }
+
+  const { error: validacionError, value } = splitOrdenSchema.validate(req.body);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
+  try {
+    const resultado = await service.splitOrden({
+      tenantId:  req.usuario.tenant_id,
+      usuarioId: req.usuario.id,
+      ordenId:   req.params.id,
+      datos:     value,
+    });
+    return creado(res, resultado, 'Cuenta dividida exitosamente.');
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
+/**
+ * POST /api/ordenes/:id/transferir
+ * Fix CUBIC: valida UUIDs antes de transferir
+ */
+const transferirItems = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de orden no tiene un formato UUID válido.', 400);
+  }
+
+  const { error: validacionError, value } = transferirItemsSchema.validate(req.body);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
+  if (!esUuidValido(value.orden_destino_id)) {
+    return error(res, 'El ID de orden destino no tiene un formato UUID válido.', 400);
+  }
+
+  try {
+    const resultado = await service.transferirItems({
+      tenantId: req.usuario.tenant_id,
+      ordenId:  req.params.id,
+      datos:    value,
+    });
+    return exito(res, resultado, 'Items transferidos exitosamente.');
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
+// ═════════════════════════════════════════════
+// CAMBIAR MESA
+// ═════════════════════════════════════════════
+
+/**
+ * PATCH /api/ordenes/:id/cambiar-mesa
+ * Cambia la mesa asignada a una orden
+ */
+const cambiarMesa = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de orden no tiene un formato UUID válido.', 400);
+  }
+
+  const { error: validacionError, value } = cambiarMesaSchema.validate(req.body);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
+  if (!esUuidValido(value.mesa_id)) {
+    return error(res, 'El ID de mesa no tiene un formato UUID válido.', 400);
+  }
+
+  try {
+    const resultado = await service.cambiarMesa({
+      tenantId: req.usuario.tenant_id,
+      ordenId:  req.params.id,
+      mesaId:   value.mesa_id,
+    });
+    return exito(res, resultado, 'Mesa cambiada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -373,5 +466,8 @@ module.exports = {
   agregarItem,
   actualizarItem,
   eliminarItem,
+  splitOrden,
+  transferirItems,
+  cambiarMesa,
   registrarPago,
 };
