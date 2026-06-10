@@ -36,7 +36,12 @@ const loginEmail = async (req, res) => {
   if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
-    const resultado = await authService.loginEmail({ ...value, ip: req.ip });
+    const resultado = await authService.loginEmail({
+      email: value.email,
+      password: value.password,
+      tenantId: value.tenant_id,
+      ip: req.ip,
+    });
     return exito(res, resultado, 'Sesión iniciada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
@@ -99,7 +104,7 @@ const logout = async (req, res) => {
   }
 
   try {
-    await authService.logout({ refreshToken: req.body.refresh_token });
+    await authService.logout({ refreshToken: req.body.refresh_token, tenantId: req.usuario.tenant_id });
     return exito(res, null, 'Sesión cerrada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
@@ -110,7 +115,7 @@ const logout = async (req, res) => {
 // GET /auth/me
 // ─────────────────────────────────────────────
 const me = async (req, res) => {
-  return exito(res, req.usuario, 'Datos del usuario actual.');
+  return exito(res, { usuario: req.usuario }, 'Datos del usuario actual.');
 };
 
 // ─────────────────────────────────────────────
@@ -170,7 +175,7 @@ const listarUsuariosParaPin = async (req, res) => {
 
   try {
     const usuarios = await authService.listarUsuariosParaPin({ tenantId });
-    return exito(res, usuarios);
+    return exito(res, { usuarios });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -182,7 +187,7 @@ const listarUsuariosParaPin = async (req, res) => {
 const listarUsuarios = async (req, res) => {
   try {
     const usuarios = await authService.listarUsuarios({ tenantId: req.usuario.tenant_id });
-    return exito(res, usuarios);
+    return exito(res, { usuarios });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -202,7 +207,7 @@ const obtenerUsuario = async (req, res) => {
       tenantId:  req.usuario.tenant_id,
       usuarioId: req.params.id,
     });
-    return exito(res, usuario);
+    return exito(res, { usuario });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -220,7 +225,7 @@ const crearUsuario = async (req, res) => {
       tenantId: req.usuario.tenant_id,
       datos:    value,
     });
-    return creado(res, usuario, 'Usuario creado exitosamente.');
+    return creado(res, { usuario }, 'Usuario creado exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -244,7 +249,7 @@ const actualizarUsuario = async (req, res) => {
       usuarioId: req.params.id,
       datos:     value,
     });
-    return exito(res, usuario, 'Usuario actualizado exitosamente.');
+    return exito(res, { usuario }, 'Usuario actualizado exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -276,6 +281,18 @@ const resetearPin = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// GET /empresas — pública (listar tenants activos)
+// ─────────────────────────────────────────────
+const listarTenants = async (_req, res) => {
+  try {
+    const tenants = await authService.listarTenants();
+    return exito(res, tenants);
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
 module.exports = {
   loginEmail,
   loginPin,
@@ -290,4 +307,5 @@ module.exports = {
   crearUsuario,
   actualizarUsuario,
   resetearPin,
+  listarTenants,
 };

@@ -161,10 +161,10 @@ const getCajaActiva = async ({ tenantId, sucursalId = null }) => {
        u.nombre AS usuario_nombre
      FROM movimientos_caja m
      JOIN usuarios u ON u.id = m.usuario_id
-     WHERE m.caja_id = $1
+     WHERE m.caja_id = $1 AND m.tenant_id = $2
      ORDER BY m.creado_en DESC
      LIMIT 10`,
-    [caja.id]
+    [caja.id, caja.tenant_id]
   );
 
   return { ...caja, movimientos_recientes: movimientos };

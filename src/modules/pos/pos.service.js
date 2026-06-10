@@ -40,8 +40,8 @@ const recalcularOrden = async (client, ordenId, tenantId) => {
   );
 
   const { rows: ordenRows } = await client.query(
-    'SELECT porcentaje_descuento FROM ordenes WHERE id = $1',
-    [ordenId]
+    'SELECT porcentaje_descuento FROM ordenes WHERE id = $1 AND tenant_id = $2',
+    [ordenId, tenantId]
   );
 
   const subtotalBase       = Number(itemsRows[0].subtotal);
@@ -55,8 +55,8 @@ const recalcularOrden = async (client, ordenId, tenantId) => {
        total     = $3,
        gravado   = $4,
        iva       = $5
-     WHERE id = $6`,
-    [totales.subtotal, totales.descuento, totales.total, totales.gravado, totales.iva, ordenId]
+     WHERE id = $6 AND tenant_id = $7`,
+    [totales.subtotal, totales.descuento, totales.total, totales.gravado, totales.iva, ordenId, tenantId]
   );
 
   return totales;
@@ -93,7 +93,7 @@ const validarTransicion = (estadoActual, estadoNuevo) => {
  * Adjunta la orden activa (si existe) a una mesa
  * Acepta un array o un objeto individual — devuelve el mismo tipo
  */
-const adjuntarOrdenActiva = async (mesas) => {
+const adjuntarOrdenActiva = async (mesas, tenantId) => {
   const esArray = Array.isArray(mesas);
   const lista = esArray ? mesas : [mesas];
   if (lista.length === 0) return mesas;
@@ -102,8 +102,8 @@ const adjuntarOrdenActiva = async (mesas) => {
   const { rows: ordenes } = await query(
     `SELECT mesa_id, id as orden_id, creado_en as orden_creada_en, total as orden_total
      FROM ordenes
-     WHERE mesa_id = ANY($1::uuid[]) AND estado NOT IN ('pagada', 'cancelada')`,
-    [mesaIds]
+     WHERE mesa_id = ANY($1::uuid[]) AND tenant_id = $2 AND estado NOT IN ('pagada', 'cancelada')`,
+    [mesaIds, tenantId]
   );
 
   const ordenPorMesa = {};
@@ -131,7 +131,7 @@ const listarMesas = async ({ tenantId, soloActivas = true }) => {
     [tenantId]
   );
 
-  await adjuntarOrdenActiva(rows);
+  await adjuntarOrdenActiva(rows, tenantId);
   return rows;
 };
 
@@ -142,8 +142,8 @@ const obtenerMesa = async ({ tenantId, mesaId }) => {
     [mesaId, tenantId]
   );
   if (rows.length === 0) throw { status: 404, mensaje: 'Mesa no encontrada.' };
-  const mesa = await adjuntarOrdenActiva(rows[0]);
-  return mesa;
+  await adjuntarOrdenActiva(rows[0], tenantId);
+  return rows[0];
 };
 
 const crearMesa = async ({ tenantId, datos }) => {
@@ -380,8 +380,8 @@ const cambiarEstadoOrden = async ({ tenantId, ordenId, estado, motivo }) => {
     const cerradoEn = ['pagada', 'cancelada'].includes(estado) ? 'NOW()' : 'NULL';
 
     await client.query(
-      `UPDATE ordenes SET estado = $1, cerrado_en = ${cerradoEn} WHERE id = $2`,
-      [estado, ordenId]
+      `UPDATE ordenes SET estado = $1, cerrado_en = ${cerradoEn} WHERE id = $2 AND tenant_id = $3`,
+      [estado, ordenId, tenantId]
     );
 
     // Si se cancela y tenía mesa, liberarla
@@ -434,9 +434,9 @@ const actualizarOrden = async ({ tenantId, ordenId, datos }) => {
     }
 
     if (campos.length > 0) {
-      valores.push(ordenId);
+      valores.push(ordenId, tenantId);
       await client.query(
-        `UPDATE ordenes SET ${campos.join(', ')} WHERE id = $${idx}`,
+        `UPDATE ordenes SET ${campos.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx}`,
         valores
       );
     }
@@ -529,8 +529,8 @@ const agregarItem = async ({ tenantId, ordenId, datos }) => {
     // Descontar stock si aplica
     if (producto.tiene_stock) {
       await client.query(
-        'UPDATE productos SET stock_actual = stock_actual - $1 WHERE id = $2',
-        [datos.cantidad, producto.id]
+        'UPDATE productos SET stock_actual = stock_actual - $1 WHERE id = $2 AND tenant_id = $3',
+          [datos.cantidad, producto.id, tenantId]
       );
     }
 
@@ -608,8 +608,8 @@ const agregarComboAOrden = async ({ tenantId, ordenId, datos, combo }) => {
 
       if (c.tiene_stock) {
         await client.query(
-          'UPDATE productos SET stock_actual = stock_actual - $1 WHERE id = $2',
-          [cantidadTotal, c.producto_id]
+          'UPDATE productos SET stock_actual = stock_actual - $1 WHERE id = $2 AND tenant_id = $3',
+          [cantidadTotal, c.producto_id, tenantId]
         );
       }
 
@@ -669,8 +669,8 @@ const actualizarItem = async ({ tenantId, ordenId, itemId, usuarioId, datos }) =
 
       // Ajustar stock si aplica
       const { rows: prodRows } = await client.query(
-        'SELECT tiene_stock, stock_actual FROM productos WHERE id = $1',
-        [itemActual.producto_id]
+        'SELECT tiene_stock, stock_actual FROM productos WHERE id = $1 AND tenant_id = $2',
+        [itemActual.producto_id, tenantId]
       );
 
       if (prodRows[0]?.tiene_stock) {
@@ -681,8 +681,8 @@ const actualizarItem = async ({ tenantId, ordenId, itemId, usuarioId, datos }) =
           };
         }
         await client.query(
-          'UPDATE productos SET stock_actual = stock_actual - $1 WHERE id = $2',
-          [diferencia, itemActual.producto_id]
+          'UPDATE productos SET stock_actual = stock_actual - $1 WHERE id = $2 AND tenant_id = $3',
+          [diferencia, itemActual.producto_id, tenantId]
         );
       }
     }
@@ -700,9 +700,9 @@ const actualizarItem = async ({ tenantId, ordenId, itemId, usuarioId, datos }) =
     if (datos.descuento_porcentaje !== undefined) { campos.push(`descuento_porcentaje = $${idx++}`); valores.push(datos.descuento_porcentaje); }
 
     if (campos.length > 0) {
-      valores.push(itemId);
+      valores.push(itemId, tenantId);
       await client.query(
-        `UPDATE orden_items SET ${campos.join(', ')} WHERE id = $${idx}`,
+        `UPDATE orden_items SET ${campos.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx}`,
         valores
       );
     }
@@ -766,20 +766,20 @@ const eliminarItem = async ({ tenantId, ordenId, itemId }) => {
 
     // Cancelar el item (soft delete — mantiene historial)
     await client.query(
-      'UPDATE orden_items SET estado = $1 WHERE id = $2',
-      ['cancelado', itemId]
+      'UPDATE orden_items SET estado = $1 WHERE id = $2 AND tenant_id = $3',
+      ['cancelado', itemId, tenantId]
     );
 
     // Devolver stock si aplica
     if (item.producto_id) {
       const { rows: prodRows } = await client.query(
-        'SELECT tiene_stock FROM productos WHERE id = $1',
-        [item.producto_id]
+        'SELECT tiene_stock FROM productos WHERE id = $1 AND tenant_id = $2',
+        [item.producto_id, tenantId]
       );
       if (prodRows[0]?.tiene_stock) {
         await client.query(
-          'UPDATE productos SET stock_actual = stock_actual + $1 WHERE id = $2',
-          [item.cantidad, item.producto_id]
+          'UPDATE productos SET stock_actual = stock_actual + $1 WHERE id = $2 AND tenant_id = $3',
+          [item.cantidad, item.producto_id, tenantId]
         );
       }
     }
@@ -857,8 +857,8 @@ const splitOrden = async ({ tenantId, usuarioId, ordenId, datos }) => {
 
     // Mover los items seleccionados a la nueva orden
     await client.query(
-      `UPDATE orden_items SET orden_id = $1 WHERE id = ANY($2::uuid[])`,
-      [nuevaOrdenId, itemIds]
+      'UPDATE orden_items SET orden_id = $1 WHERE id = ANY($2::uuid[]) AND tenant_id = $3',
+      [nuevaOrdenId, itemIds, tenantId]
     );
 
     // Recalcular ambas órdenes
@@ -912,8 +912,8 @@ const transferirItems = async ({ tenantId, ordenId, datos }) => {
 
     // Mover los items
     await client.query(
-      `UPDATE orden_items SET orden_id = $1 WHERE id = ANY($2::uuid[])`,
-      [orden_destino_id, itemIds]
+      'UPDATE orden_items SET orden_id = $1 WHERE id = ANY($2::uuid[]) AND tenant_id = $3',
+      [orden_destino_id, itemIds, tenantId]
     );
 
     // Recalcular ambas órdenes
@@ -976,8 +976,8 @@ const cambiarMesa = async ({ tenantId, ordenId, mesaId }) => {
 
     // Asignar nueva mesa
     await client.query(
-      'UPDATE ordenes SET mesa_id = $1 WHERE id = $2',
-      [mesaId, ordenId]
+      'UPDATE ordenes SET mesa_id = $1 WHERE id = $2 AND tenant_id = $3',
+      [mesaId, ordenId, tenantId]
     );
 
     // Marcar mesa como ocupada

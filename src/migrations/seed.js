@@ -147,6 +147,8 @@ const sembrarMenusTenant = async (tenantId) => {
     { id: '00000000-0000-0000-0000-000000000007', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Roles',      icono: 'shield',     ruta: '/admin/roles',         orden: 4, permiso_codigo: 'roles.configurar' },
     { id: '00000000-0000-0000-0000-000000000008', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Caja',       icono: 'dollar-sign',ruta: '/admin/caja',           orden: 5, permiso_codigo: 'caja.historial' },
     { id: '00000000-0000-0000-0000-000000000009', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Clientes',   icono: 'users',      ruta: '/admin/clientes',      orden: 6, permiso_codigo: 'clientes.ver' },
+    { id: '00000000-0000-0000-0000-000000000010', parent_id: null,     titulo: 'Configuraciones',  icono: 'settings',      ruta: null,                   orden: 4, permiso_codigo: null },
+    { id: '00000000-0000-0000-0000-000000000011', parent_id: '00000000-0000-0000-0000-000000000010', titulo: 'Menú',       icono: 'menu',       ruta: '/admin/menus',        orden: 1, permiso_codigo: null },
   ];
 
   for (const m of menus) {

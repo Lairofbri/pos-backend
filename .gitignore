@@ -4,6 +4,6 @@ node_modules/
 
 #agents
 AGENTS.md
-docs\superpowers\specs
-frontend-instructions.md
+docs
+docs/api
 

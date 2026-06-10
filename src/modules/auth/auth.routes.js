@@ -12,6 +12,9 @@ const router = Router();
 // Rutas PÚBLICAS (sin autenticación)
 // ─────────────────────────────────────────────
 
+// Listar empresas (tenants) activas — para selector antes del login
+router.get('/empresas', controller.listarTenants);
+
 // Login con email y password — panel web administrador
 router.post('/auth/login', controller.loginEmail);
 
