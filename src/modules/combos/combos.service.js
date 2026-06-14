@@ -26,8 +26,8 @@ const listarCombos = async ({ tenantId, soloActivos = true }) => {
       `SELECT cp.producto_id, cp.cantidad, p.nombre, p.precio
        FROM combo_productos cp
        JOIN productos p ON p.id = cp.producto_id
-       WHERE cp.combo_id = $1`,
-      [combo.id]
+       WHERE cp.combo_id = $1 AND cp.tenant_id = $2`,
+      [combo.id, tenantId]
     );
     combo.productos = productos;
   }
@@ -53,8 +53,8 @@ const obtenerCombo = async ({ tenantId, comboId }) => {
     `SELECT cp.producto_id, cp.cantidad, p.nombre, p.precio
      FROM combo_productos cp
      JOIN productos p ON p.id = cp.producto_id
-     WHERE cp.combo_id = $1`,
-    [combo.id]
+     WHERE cp.combo_id = $1 AND cp.tenant_id = $2`,
+    [combo.id, tenantId]
   );
   combo.productos = productos;
 
@@ -89,9 +89,9 @@ const crearCombo = async ({ tenantId, datos }) => {
 
   for (const p of productos) {
     await query(
-      `INSERT INTO combo_productos (combo_id, producto_id, cantidad)
-       VALUES ($1, $2, $3)`,
-      [combo.id, p.producto_id, p.cantidad || 1]
+      `INSERT INTO combo_productos (combo_id, producto_id, cantidad, tenant_id)
+       VALUES ($1, $2, $3, $4)`,
+      [combo.id, p.producto_id, p.cantidad || 1, tenantId]
     );
   }
 
@@ -124,13 +124,13 @@ const actualizarCombo = async ({ tenantId, comboId, datos }) => {
 
   // Si se enviaron productos, reemplazar completamente
   if (datos.productos) {
-    await query('DELETE FROM combo_productos WHERE combo_id = $1', [comboId]);
+    await query('DELETE FROM combo_productos WHERE combo_id = $1 AND tenant_id = $2', [comboId, tenantId]);
 
     for (const p of datos.productos) {
       await query(
-        `INSERT INTO combo_productos (combo_id, producto_id, cantidad)
-         VALUES ($1, $2, $3)`,
-        [comboId, p.producto_id, p.cantidad || 1]
+        `INSERT INTO combo_productos (combo_id, producto_id, cantidad, tenant_id)
+         VALUES ($1, $2, $3, $4)`,
+        [comboId, p.producto_id, p.cantidad || 1, tenantId]
       );
     }
   }

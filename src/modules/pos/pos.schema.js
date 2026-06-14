@@ -17,6 +17,7 @@ const crearMesaSchema = Joi.object({
     'number.min':   'La capacidad debe ser al menos 1.',
     'any.required': 'La capacidad es requerida.',
   }),
+  zona:       Joi.string().max(50).optional().allow('', null),
   sucursal_id: Joi.string().uuid().optional().allow(null),
 });
 
@@ -24,7 +25,10 @@ const actualizarMesaSchema = Joi.object({
   numero:     Joi.string().max(10).optional(),
   nombre:     Joi.string().max(50).optional().allow('', null),
   capacidad:  Joi.number().integer().min(1).optional(),
+  zona:       Joi.string().max(50).optional().allow('', null),
   activo:     Joi.boolean().optional(),
+  // Validado contra catalogos (grupo: estados_mesa) + CHECK constraint en BD
+  estado:     Joi.string().optional(),
 }).min(1);
 
 // ─────────────────────────────────────────────
@@ -217,6 +221,7 @@ const filtrosOrdenesSchema = Joi.object({
   origen:      Joi.string()
     .valid('pos', 'hugo', 'pedidosya', 'ubereats', 'whatsapp', 'telefono', 'otro')
     .optional(),
+  activas:     Joi.boolean().optional().default(false),
   usuario_id:  Joi.string().uuid().optional(),
   fecha_desde: Joi.date().iso().optional(),
   fecha_hasta: Joi.date().iso().optional(),

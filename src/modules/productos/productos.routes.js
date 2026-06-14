@@ -4,8 +4,8 @@
 
 const { Router } = require('express');
 const controller  = require('./productos.controller');
-const { autenticar }                    = require('../../middlewares/auth.middleware');
-const { soloAdmin, adminOCajero, todosLosRoles } = require('../../middlewares/role.middleware');
+const { autenticar }         = require('../../middlewares/auth.middleware');
+const { requierePermiso }    = require('../../middlewares/permisos.middleware');
 
 const router = Router();
 
@@ -16,49 +16,25 @@ router.use(autenticar);
 // CATEGORÍAS
 // ─────────────────────────────────────────────
 
-// Listar categorías — todos los roles (el POS las necesita)
-router.get('/categorias', todosLosRoles, controller.listarCategorias);
-
-// Obtener una categoría — todos los roles
-router.get('/categorias/:id', todosLosRoles, controller.obtenerCategoria);
-
-// Crear categoría — solo admin
-router.post('/categorias', soloAdmin, controller.crearCategoria);
-
-// Actualizar categoría — solo admin
-router.patch('/categorias/:id', soloAdmin, controller.actualizarCategoria);
-
-// Desactivar categoría — solo admin
-router.delete('/categorias/:id', soloAdmin, controller.desactivarCategoria);
+router.get('/categorias', requierePermiso('categorias.ver'), controller.listarCategorias);
+router.get('/categorias/:id', requierePermiso('categorias.ver'), controller.obtenerCategoria);
+router.post('/categorias', requierePermiso('categorias.crear'), controller.crearCategoria);
+router.patch('/categorias/:id', requierePermiso('categorias.editar'), controller.actualizarCategoria);
+router.delete('/categorias/:id', requierePermiso('categorias.desactivar'), controller.desactivarCategoria);
 
 // ─────────────────────────────────────────────
 // PRODUCTOS
 // ─────────────────────────────────────────────
 
-// Alertas de stock bajo — admin y cajero
-// IMPORTANTE: esta ruta va ANTES de /:id para que no confunda
-// 'alertas' con un UUID
-router.get('/productos/alertas/stock-bajo', adminOCajero, controller.stockBajo);
+// IMPORTANTE: alertas va ANTES de /:id
+router.get('/productos/alertas/stock-bajo', requierePermiso('productos.stock'), controller.stockBajo);
 
-// Listar productos con filtros — todos los roles
-router.get('/productos', todosLosRoles, controller.listarProductos);
-
-// Obtener un producto — todos los roles
-router.get('/productos/:id', todosLosRoles, controller.obtenerProducto);
-
-// Crear producto — solo admin
-router.post('/productos', soloAdmin, controller.crearProducto);
-
-// Actualizar producto — solo admin
-router.patch('/productos/:id', soloAdmin, controller.actualizarProducto);
-
-// Toggle activo/inactivo — admin y cajero (para marcar agotado desde el POS)
-router.patch('/productos/:id/toggle', adminOCajero, controller.toggleProducto);
-
-// Ajustar stock — admin y cajero
-router.patch('/productos/:id/stock', adminOCajero, controller.ajustarStock);
-
-// Desactivar producto — solo admin
-router.delete('/productos/:id', soloAdmin, controller.desactivarProducto);
+router.get('/productos', requierePermiso('productos.ver'), controller.listarProductos);
+router.get('/productos/:id', requierePermiso('productos.ver'), controller.obtenerProducto);
+router.post('/productos', requierePermiso('productos.crear'), controller.crearProducto);
+router.patch('/productos/:id', requierePermiso('productos.editar'), controller.actualizarProducto);
+router.patch('/productos/:id/toggle', requierePermiso('productos.desactivar'), controller.toggleProducto);
+router.patch('/productos/:id/stock', requierePermiso('productos.stock'), controller.ajustarStock);
+router.delete('/productos/:id', requierePermiso('productos.desactivar'), controller.desactivarProducto);
 
 module.exports = router;

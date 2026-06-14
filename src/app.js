@@ -19,7 +19,7 @@ const permisosRoutes  = require('./modules/permisos/permisos.routes');
 const combosRoutes    = require('./modules/combos/combos.routes');
 const cocinaRoutes    = require('./modules/cocina/cocina.routes');
 const menusRoutes     = require('./modules/menus/menus.routes');
-// Aquí se irán agregando los demás módulos:
+const catalogosRoutes = require('./modules/catalogos/catalogos.routes');
 
 
 const app = express();
@@ -80,6 +80,14 @@ app.use('/api/auth/login', limiteAuth);
 app.use('/api/auth/login-pin', limiteAuth);
 app.use('/api/usuarios/pin-list', limiteAuth);
 
+// Rate limit para refresh de token — evita abuso en rotación de tokens
+const limiteRefresh = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { ok: false, mensaje: 'Demasiadas solicitudes de refresh. Intenta más tarde.' },
+});
+app.use('/api/auth/refresh', limiteRefresh);
+
 // Parse JSON body
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: false }));
@@ -131,7 +139,9 @@ app.use('/api', cajaRoutes);
 app.use('/api', permisosRoutes);
 app.use('/api', combosRoutes);
 app.use('/api', cocinaRoutes);
-app.use('/api', menusRoutes);// ─────────────────────────────────────────────
+app.use('/api', menusRoutes);
+app.use('/api', catalogosRoutes);
+// ─────────────────────────────────────────────
 // 404 — Ruta no encontrada
 // ─────────────────────────────────────────────
 app.use((_req, res) => {

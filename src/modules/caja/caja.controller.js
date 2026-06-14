@@ -8,6 +8,7 @@ const {
   cerrarCajaSchema,
   movimientoSchema,
   filtrosCajaSchema,
+  resumenDiarioSchema,
 } = require('./caja.schema');
 const {
   exito,
@@ -46,7 +47,7 @@ const abrirCaja = async (req, res) => {
       usuarioId: req.usuario.id,
       datos:     value,
     });
-    return creado(res, caja, 'Caja abierta exitosamente. Buen turno.');
+    return creado(res, { caja }, 'Caja abierta exitosamente. Buen turno.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -69,7 +70,7 @@ const getCajaActiva = async (req, res) => {
       tenantId:   req.usuario.tenant_id,
       sucursalId: sucursal_id || null,
     });
-    return exito(res, caja);
+    return exito(res, { caja });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -94,7 +95,7 @@ const cerrarCaja = async (req, res) => {
       usuarioId: req.usuario.id,
       datos:     value,
     });
-    return exito(res, caja, 'Caja cerrada exitosamente.');
+    return exito(res, { caja }, 'Caja cerrada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -122,7 +123,7 @@ const registrarMovimiento = async (req, res) => {
     const msg = value.tipo === 'retiro'
       ? `Retiro de $${value.monto} registrado.`
       : `Depósito de $${value.monto} registrado.`;
-    return creado(res, movimiento, msg);
+    return creado(res, { movimiento }, msg);
   } catch (err) {
     return manejarError(res, err);
   }
@@ -195,6 +196,24 @@ const getHistorialCajas = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/caja/resumen-diario
+ */
+const getResumenDiario = async (req, res) => {
+  const { error: validacionError, value } = resumenDiarioSchema.validate(req.query);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
+  try {
+    const resumen = await service.resumenDiario({
+      tenantId: req.usuario.tenant_id,
+      fecha: value.fecha || null,
+    });
+    return exito(res, { resumen });
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
 module.exports = {
   abrirCaja,
   getCajaActiva,
@@ -202,4 +221,5 @@ module.exports = {
   registrarMovimiento,
   getMovimientos,
   getHistorialCajas,
+  getResumenDiario,
 };
