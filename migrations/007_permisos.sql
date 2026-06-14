@@ -79,7 +79,23 @@ INSERT INTO permisos (codigo, nombre, descripcion, modulo) VALUES
 
     -- Módulo: Reportes
     ('reportes.ver',        'Ver reportes',             'Acceder a los reportes del restaurante',       'reportes'),
-    ('reportes.exportar',   'Exportar reportes',        'Descargar reportes en PDF o Excel',            'reportes')
+    ('reportes.exportar',   'Exportar reportes',        'Descargar reportes en PDF o Excel',            'reportes'),
+
+    -- Módulo: Categorías
+    ('categorias.ver',          'Ver categorías',               'Ver listado de categorías',                    'categorias'),
+    ('categorias.desactivar',   'Desactivar categorías',        'Marcar una categoría como inactiva',           'categorias'),
+
+    -- Módulo: Combos
+    ('combos.ver',          'Ver combos',               'Ver listado y detalle de combos',               'combos'),
+    ('combos.crear',        'Crear combos',             'Crear un nuevo combo',                          'combos'),
+    ('combos.editar',       'Editar combos',            'Modificar nombre, precio o productos del combo', 'combos'),
+    ('combos.desactivar',   'Desactivar combos',        'Marcar un combo como inactivo',                 'combos'),
+
+    -- Módulo: Menú del sidebar
+    ('menus.ver',           'Ver menú del sidebar',     'Ver la estructura del menú lateral',            'menus'),
+    ('menus.crear',         'Crear items del menú',     'Agregar nuevos items al menú lateral',           'menus'),
+    ('menus.editar',        'Editar items del menú',    'Modificar items existentes del menú lateral',    'menus'),
+    ('menus.desactivar',    'Desactivar items del menú','Ocultar items del menú lateral',                 'menus')
 
 ON CONFLICT (codigo) DO NOTHING;
 

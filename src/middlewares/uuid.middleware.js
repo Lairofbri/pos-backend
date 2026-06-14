@@ -5,7 +5,7 @@
 
 const { error } = require('../utils/response');
 
-// Regex UUID v4 estándar
+// Regex UUID v4 estándar (versión 4 + variante [89ab])
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
@@ -44,7 +44,7 @@ const validarUuidParam = (param = 'id', nombreLegible = null) => {
  * @param {string} nombre — nombre del param para el mensaje
  */
 const validarUuidQuery = (res, valor, nombre) => {
-  if (valor && !esUuidValido(valor)) {
+  if (valor != null && !esUuidValido(valor)) {
     error(res, `El parámetro ${nombre} no tiene un formato UUID válido.`, 400);
     return false;
   }

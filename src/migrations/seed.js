@@ -18,114 +18,12 @@ const ADMIN_EMAIL  = 'admin@demo.pos';
 const ADMIN_PIN    = '1234';          // PIN rápido para estación
 const ADMIN_PASS   = 'Admin123!';    // Password para panel web
 
-// Permisos default por rol — definición centralizada
-// true = viene activado por default para ese rol
-const PERMISOS_DEFAULT = {
-  administrador: {
-    'ordenes.ver': true, 'ordenes.crear': true, 'ordenes.actualizar': true,
-    'ordenes.anular': true, 'ordenes.descuento': true,
-    'items.agregar': true, 'items.eliminar': true, 'items.estado': true,
-    'mesas.administrar': true, 'pago.registrar': true, 'pago.anular': true,
-    'caja.abrir': true, 'caja.cerrar': true, 'caja.movimientos': true, 'caja.historial': true,
-    'productos.ver': true, 'productos.crear': true, 'productos.editar': true,
-    'productos.desactivar': true, 'productos.stock': true,
-    'categorias.crear': true, 'categorias.editar': true,
-    'clientes.ver': true, 'clientes.crear': true, 'clientes.editar': true, 'clientes.desactivar': true,
-    'usuarios.ver': true, 'usuarios.crear': true, 'usuarios.editar': true,
-    'usuarios.reset-pin': true, 'roles.configurar': true,
-    'reportes.ver': true, 'reportes.exportar': true,
-  },
-  gerente: {
-    'ordenes.ver': true, 'ordenes.crear': true, 'ordenes.actualizar': true,
-    'ordenes.anular': true, 'ordenes.descuento': true,
-    'items.agregar': true, 'items.eliminar': true, 'items.estado': true,
-    'mesas.administrar': true, 'pago.registrar': true, 'pago.anular': false,
-    'caja.abrir': true, 'caja.cerrar': true, 'caja.movimientos': true, 'caja.historial': true,
-    'productos.ver': true, 'productos.crear': true, 'productos.editar': true,
-    'productos.desactivar': true, 'productos.stock': true,
-    'categorias.crear': true, 'categorias.editar': true,
-    'clientes.ver': true, 'clientes.crear': true, 'clientes.editar': true, 'clientes.desactivar': true,
-    'usuarios.ver': true, 'usuarios.crear': false, 'usuarios.editar': true,
-    'usuarios.reset-pin': true, 'roles.configurar': false,
-    'reportes.ver': true, 'reportes.exportar': true,
-  },
-  cajero: {
-    'ordenes.ver': true, 'ordenes.crear': true, 'ordenes.actualizar': true,
-    'ordenes.anular': false, 'ordenes.descuento': false,
-    'items.agregar': true, 'items.eliminar': true, 'items.estado': false,
-    'mesas.administrar': false, 'pago.registrar': true, 'pago.anular': false,
-    'caja.abrir': true, 'caja.cerrar': false, 'caja.movimientos': false, 'caja.historial': false,
-    'productos.ver': true, 'productos.crear': false, 'productos.editar': false,
-    'productos.desactivar': false, 'productos.stock': true,
-    'categorias.crear': false, 'categorias.editar': false,
-    'clientes.ver': true, 'clientes.crear': true, 'clientes.editar': false, 'clientes.desactivar': false,
-    'usuarios.ver': false, 'usuarios.crear': false, 'usuarios.editar': false,
-    'usuarios.reset-pin': false, 'roles.configurar': false,
-    'reportes.ver': false, 'reportes.exportar': false,
-  },
-  mesero: {
-    'ordenes.ver': true, 'ordenes.crear': false, 'ordenes.actualizar': false,
-    'ordenes.anular': false, 'ordenes.descuento': false,
-    'items.agregar': false, 'items.eliminar': false, 'items.estado': false,
-    'mesas.administrar': false, 'pago.registrar': false, 'pago.anular': false,
-    'caja.abrir': false, 'caja.cerrar': false, 'caja.movimientos': false, 'caja.historial': false,
-    'productos.ver': true, 'productos.crear': false, 'productos.editar': false,
-    'productos.desactivar': false, 'productos.stock': false,
-    'categorias.crear': false, 'categorias.editar': false,
-    'clientes.ver': false, 'clientes.crear': false, 'clientes.editar': false, 'clientes.desactivar': false,
-    'usuarios.ver': false, 'usuarios.crear': false, 'usuarios.editar': false,
-    'usuarios.reset-pin': false, 'roles.configurar': false,
-    'reportes.ver': false, 'reportes.exportar': false,
-  },
-  cocinero: {
-    'ordenes.ver': false, 'ordenes.crear': false, 'ordenes.actualizar': false,
-    'ordenes.anular': false, 'ordenes.descuento': false,
-    'items.agregar': false, 'items.eliminar': false, 'items.estado': true,
-    'mesas.administrar': false, 'pago.registrar': false, 'pago.anular': false,
-    'caja.abrir': false, 'caja.cerrar': false, 'caja.movimientos': false, 'caja.historial': false,
-    'productos.ver': true, 'productos.crear': false, 'productos.editar': false,
-    'productos.desactivar': false, 'productos.stock': false,
-    'categorias.crear': false, 'categorias.editar': false,
-    'clientes.ver': false, 'clientes.crear': false, 'clientes.editar': false, 'clientes.desactivar': false,
-    'usuarios.ver': false, 'usuarios.crear': false, 'usuarios.editar': false,
-    'usuarios.reset-pin': false, 'roles.configurar': false,
-    'reportes.ver': false, 'reportes.exportar': false,
-  },
-};
-
 /**
- * Inserta los permisos default para un tenant y rol específico.
- * Idempotente: usa ON CONFLICT DO NOTHING.
- * Exportada para usarse desde el endpoint de reset y creación de tenants.
- */
-const sembrarPermisosRol = async (tenantId, rol) => {
-  const permisos = PERMISOS_DEFAULT[rol];
-  if (!permisos) {
-    logger.warn(`Rol sin defaults definidos: ${rol}`);
-    return;
-  }
-
-  for (const [codigo, activo] of Object.entries(permisos)) {
-    await query(
-      `INSERT INTO rol_permisos (rol, permiso_id, tenant_id, activo)
-       SELECT $1, p.id, $2, $3
-       FROM permisos p
-       WHERE p.codigo = $4
-       ON CONFLICT (rol, permiso_id, tenant_id) DO UPDATE SET activo = $3`,
-      [rol, tenantId, activo, codigo]
-    );
-  }
-};
-
-/**
- * Inserta los permisos default para todos los roles de un tenant.
+ * Inserta los permisos default para un tenant (delegado a sp_sembrar_permisos_tenant)
  */
 const sembrarPermisosTenant = async (tenantId) => {
-  const roles = Object.keys(PERMISOS_DEFAULT);
-  for (const rol of roles) {
-    await sembrarPermisosRol(tenantId, rol);
-  }
-  logger.info('Permisos default sembrados para tenant', { tenant_id: tenantId, roles: roles.length });
+  await query('CALL sp_sembrar_permisos_tenant($1)', [tenantId]);
+  logger.info('Permisos default sembrados para tenant', { tenant_id: tenantId });
 };
 
 // ─────────────────────────────────────────────
@@ -138,15 +36,25 @@ const sembrarPermisosTenant = async (tenantId) => {
  */
 const sembrarMenusTenant = async (tenantId) => {
   const menus = [
-    { id: '00000000-0000-0000-0000-000000000001', parent_id: null,     titulo: 'POS',             icono: 'shopping-cart', ruta: '/pos',                orden: 1, permiso_codigo: 'ordenes.ver' },
-    { id: '00000000-0000-0000-0000-000000000002', parent_id: null,     titulo: 'Cocina',          icono: 'chef-hat',      ruta: '/cocina',             orden: 2, permiso_codigo: 'items.estado' },
-    { id: '00000000-0000-0000-0000-000000000003', parent_id: null,     titulo: 'Administración',  icono: 'settings',      ruta: null,                   orden: 3, permiso_codigo: null },
-    { id: '00000000-0000-0000-0000-000000000004', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Productos',  icono: 'package',    ruta: '/admin/productos',     orden: 1, permiso_codigo: 'productos.ver' },
-    { id: '00000000-0000-0000-0000-000000000005', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Combos',     icono: 'gift',       ruta: '/admin/combos',        orden: 2, permiso_codigo: null },
-    { id: '00000000-0000-0000-0000-000000000006', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Usuarios',   icono: 'users',      ruta: '/admin/usuarios',      orden: 3, permiso_codigo: 'usuarios.ver' },
-    { id: '00000000-0000-0000-0000-000000000007', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Roles',      icono: 'shield',     ruta: '/admin/roles',         orden: 4, permiso_codigo: 'roles.configurar' },
-    { id: '00000000-0000-0000-0000-000000000008', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Caja',       icono: 'dollar-sign',ruta: '/admin/caja',           orden: 5, permiso_codigo: 'caja.historial' },
-    { id: '00000000-0000-0000-0000-000000000009', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Clientes',   icono: 'users',      ruta: '/admin/clientes',      orden: 6, permiso_codigo: 'clientes.ver' },
+    // Raíces
+    { id: '00000000-0000-0000-0000-000000000001', parent_id: null, titulo: 'POS',             icono: 'shopping-cart', ruta: '/pos',                orden: 1, permiso_codigo: 'ordenes.ver' },
+    { id: '00000000-0000-0000-0000-000000000002', parent_id: null, titulo: 'Cocina',          icono: 'chef-hat',      ruta: '/cocina',             orden: 2, permiso_codigo: 'items.estado' },
+    { id: '00000000-0000-0000-0000-000000000003', parent_id: null, titulo: 'Administración',  icono: 'user-cog',      ruta: null,                   orden: 3, permiso_codigo: null },
+    { id: 'cc306641-6ab2-4bfa-814f-528c4cbe2a65', parent_id: null, titulo: 'Principal',      icono: 'utensils',      ruta: null,                   orden: 1, permiso_codigo: null },
+    { id: '00000000-0000-0000-0000-000000000010', parent_id: null, titulo: 'Configuraciones', icono: 'settings',      ruta: null,                   orden: 4, permiso_codigo: null },
+
+    // Hijos de Administración
+    { id: '7d14eb85-5345-4c31-920b-56cf72115633', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Categorias', icono: 'store',       ruta: '/admin/categorias', orden: 0, permiso_codigo: 'productos.ver' },
+    { id: '9f3f836b-82f0-452f-b524-5e3bc54e4318', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Mesas',      icono: 'table',       ruta: '/admin/mesas',      orden: 1, permiso_codigo: 'mesas.administrar' },
+    { id: '00000000-0000-0000-0000-000000000005', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Combos',     icono: 'gift',        ruta: '/admin/combos',     orden: 2, permiso_codigo: null },
+    { id: '00000000-0000-0000-0000-000000000004', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Productos',  icono: 'package',     ruta: '/admin/productos',  orden: 3, permiso_codigo: 'productos.ver' },
+    { id: '00000000-0000-0000-0000-000000000008', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Caja',       icono: 'dollar-sign', ruta: '/admin/caja',       orden: 5, permiso_codigo: 'caja.historial' },
+    { id: '00000000-0000-0000-0000-000000000009', parent_id: '00000000-0000-0000-0000-000000000003', titulo: 'Clientes',   icono: 'users',       ruta: '/admin/clientes',   orden: 6, permiso_codigo: 'clientes.ver' },
+
+    // Hijos de Configuraciones
+    { id: '00000000-0000-0000-0000-000000000011', parent_id: '00000000-0000-0000-0000-000000000010', titulo: 'Menú',           icono: 'menu',   ruta: '/configuraciones/menus', orden: 1, permiso_codigo: 'roles.configurar' },
+    { id: '00000000-0000-0000-0000-000000000007', parent_id: '00000000-0000-0000-0000-000000000010', titulo: 'Roles y Permisos', icono: 'shield', ruta: '/configuraciones/roles', orden: 2, permiso_codigo: 'roles.configurar' },
+    { id: '00000000-0000-0000-0000-000000000006', parent_id: '00000000-0000-0000-0000-000000000010', titulo: 'Usuarios',        icono: 'users',  ruta: '/configuraciones/usuarios', orden: 4, permiso_codigo: 'usuarios.ver' },
   ];
 
   for (const m of menus) {
@@ -207,6 +115,9 @@ const ejecutarSeed = async () => {
   // 5. Sembrar menús default del sidebar (siempre, idempotente)
   await sembrarMenusTenant(TENANT_ID);
 
+  // 6. Sembrar catálogos default (siempre, idempotente)
+  await query('CALL sp_sembrar_catalogos_tenant($1)', [TENANT_ID]);
+
   logger.info('Seed completado exitosamente.');
   logger.info('─────────────────────────────────────');
   logger.info('Credenciales del administrador demo:');
@@ -228,4 +139,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { PERMISOS_DEFAULT, sembrarPermisosRol, sembrarPermisosTenant, sembrarMenusTenant };
+module.exports = { sembrarPermisosTenant, sembrarMenusTenant };

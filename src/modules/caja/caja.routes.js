@@ -4,8 +4,9 @@
 
 const { Router } = require('express');
 const controller  = require('./caja.controller');
-const { autenticar }                    = require('../../middlewares/auth.middleware');
-const { soloAdmin, adminOCajero, todosLosRoles } = require('../../middlewares/role.middleware');
+const { autenticar }         = require('../../middlewares/auth.middleware');
+const { requierePermiso }    = require('../../middlewares/permisos.middleware');
+const { requiereCajaAbierta } = require('../../middlewares/caja.middleware');
 
 const router = Router();
 
@@ -16,22 +17,12 @@ router.use(autenticar);
 // IMPORTANTE: rutas específicas ANTES de /:id
 // ─────────────────────────────────────────────
 
-// Historial de cajas — solo admin
-router.get('/caja/historial', soloAdmin, controller.getHistorialCajas);
-
-// Caja activa — todos los roles (el mesero puede consultar)
-router.get('/caja/activa', todosLosRoles, controller.getCajaActiva);
-
-// Abrir caja — admin y cajero
-router.post('/caja/abrir', adminOCajero, controller.abrirCaja);
-
-// Cerrar caja — admin y cajero
-router.post('/caja/cerrar', adminOCajero, controller.cerrarCaja);
-
-// Registrar movimiento manual — admin y cajero
-router.post('/caja/movimiento', adminOCajero, controller.registrarMovimiento);
-
-// Movimientos de una caja específica — admin y cajero
-router.get('/caja/:id/movimientos', adminOCajero, controller.getMovimientos);
+router.get('/caja/historial', requierePermiso('caja.historial'), controller.getHistorialCajas);
+router.get('/caja/activa', controller.getCajaActiva);
+router.post('/caja/abrir', requierePermiso('caja.abrir'), controller.abrirCaja);
+router.post('/caja/cerrar', requiereCajaAbierta, requierePermiso('caja.cerrar'), controller.cerrarCaja);
+router.post('/caja/movimiento', requiereCajaAbierta, requierePermiso('caja.movimientos'), controller.registrarMovimiento);
+router.get('/caja/resumen-diario', requierePermiso('caja.movimientos'), controller.getResumenDiario);
+router.get('/caja/:id/movimientos', requierePermiso('caja.movimientos'), controller.getMovimientos);
 
 module.exports = router;

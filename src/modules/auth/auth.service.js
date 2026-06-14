@@ -71,20 +71,20 @@ const formatearUsuario = (row) => ({
   apellido:    row.apellido,
   email:       row.email,
   rol:         row.rol,
+  activo:      row.activo,
   ultimo_acceso: row.ultimo_acceso,
 });
 
 // ─────────────────────────────────────────────
 // Login con email + password (panel web admin)
 // ─────────────────────────────────────────────
-const loginEmail = async ({ email, password, ip }) => {
-  // Buscar usuario activo por email (cross-tenant — email es único global)
+const loginEmail = async ({ email, password, tenantId, ip }) => {
   const { rows } = await query(
     `SELECT u.*, t.activo as tenant_activo
      FROM usuarios u
      JOIN tenants t ON t.id = u.tenant_id
-     WHERE u.email = $1 AND u.activo = TRUE`,
-    [email.toLowerCase()]
+     WHERE u.email = $1 AND u.tenant_id = $2 AND u.activo = TRUE`,
+    [email.toLowerCase(), tenantId]
   );
 
   if (rows.length === 0) {
@@ -109,8 +109,8 @@ const loginEmail = async ({ email, password, ip }) => {
 
   // Actualizar último acceso
   await query(
-    'UPDATE usuarios SET ultimo_acceso = NOW() WHERE id = $1',
-    [usuario.id]
+    'UPDATE usuarios SET ultimo_acceso = NOW() WHERE id = $1 AND tenant_id = $2',
+    [usuario.id, usuario.tenant_id]
   );
 
   const { accessToken, refreshToken } = generarTokens(usuario);
@@ -182,8 +182,8 @@ const loginPin = async ({ tenantId, usuarioId, pin, ip }) => {
     }
 
     await query(
-      'UPDATE usuarios SET intentos_pin = $1, bloqueado_hasta = $2 WHERE id = $3',
-      [nuevosIntentos, bloqueadoHasta, usuarioId]
+      'UPDATE usuarios SET intentos_pin = $1, bloqueado_hasta = $2 WHERE id = $3 AND tenant_id = $4',
+      [nuevosIntentos, bloqueadoHasta, usuarioId, tenantId]
     );
 
     const intentosRestantes = MAX_INTENTOS_PIN - nuevosIntentos;
@@ -197,8 +197,8 @@ const loginPin = async ({ tenantId, usuarioId, pin, ip }) => {
 
   // PIN correcto — resetear intentos y actualizar último acceso
   await query(
-    'UPDATE usuarios SET intentos_pin = 0, bloqueado_hasta = NULL, ultimo_acceso = NOW() WHERE id = $1',
-    [usuario.id]
+    'UPDATE usuarios SET intentos_pin = 0, bloqueado_hasta = NULL, ultimo_acceso = NOW() WHERE id = $1 AND tenant_id = $2',
+    [usuario.id, tenantId]
   );
 
   const { accessToken, refreshToken } = generarTokens(usuario);
@@ -251,8 +251,8 @@ const refreshAccessToken = async ({ refreshToken }) => {
 
   // Invalidar el refresh token anterior (rotación)
   await query(
-    'UPDATE refresh_tokens SET activo = FALSE WHERE token_hash = $1',
-    [tokenHash]
+    'UPDATE refresh_tokens SET activo = FALSE WHERE token_hash = $1 AND tenant_id = $2',
+    [tokenHash, sesion.tenant_id]
   );
 
   // Generar nuevo par de tokens
@@ -278,13 +278,13 @@ const refreshAccessToken = async ({ refreshToken }) => {
 // ─────────────────────────────────────────────
 // Logout: invalidar refresh token
 // ─────────────────────────────────────────────
-const logout = async ({ refreshToken }) => {
-  if (!refreshToken) return; // Silencioso si no hay token
+const logout = async ({ refreshToken, tenantId }) => {
+  if (!refreshToken) return;
 
   const tokenHash = hashRefreshToken(refreshToken);
   await query(
-    'UPDATE refresh_tokens SET activo = FALSE WHERE token_hash = $1',
-    [tokenHash]
+    'UPDATE refresh_tokens SET activo = FALSE WHERE token_hash = $1 AND tenant_id = $2',
+    [tokenHash, tenantId]
   );
 };
 
@@ -308,14 +308,14 @@ const cambiarPin = async ({ usuarioId, tenantId, pinActual, pinNuevo }) => {
 
   const nuevoPinHash = await bcrypt.hash(String(pinNuevo), SALT_ROUNDS);
   await query(
-    'UPDATE usuarios SET pin_hash = $1 WHERE id = $2',
-    [nuevoPinHash, usuarioId]
+    'UPDATE usuarios SET pin_hash = $1 WHERE id = $2 AND tenant_id = $3',
+    [nuevoPinHash, usuarioId, tenantId]
   );
 
   // Invalidar todos los refresh tokens activos del usuario
   await query(
-    'UPDATE refresh_tokens SET activo = FALSE WHERE usuario_id = $1 AND activo = TRUE',
-    [usuarioId]
+    'UPDATE refresh_tokens SET activo = FALSE WHERE usuario_id = $1 AND tenant_id = $2 AND activo = TRUE',
+    [usuarioId, tenantId]
   );
 
   logger.info('PIN cambiado', { usuario_id: usuarioId });
@@ -341,14 +341,14 @@ const cambiarPassword = async ({ usuarioId, tenantId, passwordActual, passwordNu
 
   const nuevoHash = await bcrypt.hash(passwordNuevo, SALT_ROUNDS);
   await query(
-    'UPDATE usuarios SET password_hash = $1 WHERE id = $2',
-    [nuevoHash, usuarioId]
+    'UPDATE usuarios SET password_hash = $1 WHERE id = $2 AND tenant_id = $3',
+    [nuevoHash, usuarioId, tenantId]
   );
 
   // Invalidar todos los refresh tokens activos del usuario
   await query(
-    'UPDATE refresh_tokens SET activo = FALSE WHERE usuario_id = $1 AND activo = TRUE',
-    [usuarioId]
+    'UPDATE refresh_tokens SET activo = FALSE WHERE usuario_id = $1 AND tenant_id = $2 AND activo = TRUE',
+    [usuarioId, tenantId]
   );
 
   logger.info('Password cambiado', { usuario_id: usuarioId });
@@ -380,17 +380,33 @@ const obtenerUsuario = async ({ tenantId, usuarioId }) => {
   return rows[0];
 };
 
+const obtenerMe = async ({ usuarioId, tenantId }) => {
+  const { rows } = await query(
+    `SELECT id, nombre, apellido, email, rol, sucursal_id, activo, ultimo_acceso
+     FROM usuarios
+     WHERE id = $1 AND tenant_id = $2`,
+    [usuarioId, tenantId]
+  );
+  if (rows.length === 0) {
+    throw { status: 401, mensaje: 'Usuario no encontrado.' };
+  }
+  if (!rows[0].activo) {
+    throw { status: 403, mensaje: 'Cuenta de usuario desactivada.' };
+  }
+  return rows[0];
+};
+
 const crearUsuario = async ({ tenantId, datos }) => {
   const { nombre, apellido, email, pin, password, rol, sucursal_id } = datos;
 
-  // Verificar email único si se provee
+  // Verificar email único dentro del mismo tenant
   if (email) {
     const { rows: existe } = await query(
-      'SELECT id FROM usuarios WHERE email = $1',
-      [email.toLowerCase()]
+      'SELECT id FROM usuarios WHERE email = $1 AND tenant_id = $2',
+      [email.toLowerCase(), tenantId]
     );
     if (existe.length > 0) {
-      throw { status: 409, mensaje: 'Ya existe un usuario con ese email.' };
+      throw { status: 409, mensaje: 'Ya existe un usuario con ese email en este restaurante.' };
     }
   }
 
@@ -462,8 +478,8 @@ const resetearPin = async ({ tenantId, usuarioId, pinNuevo }) => {
 
   // Invalidar todos los refresh tokens activos del usuario
   await query(
-    'UPDATE refresh_tokens SET activo = FALSE WHERE usuario_id = $1 AND activo = TRUE',
-    [usuarioId]
+    'UPDATE refresh_tokens SET activo = FALSE WHERE usuario_id = $1 AND tenant_id = $2 AND activo = TRUE',
+    [usuarioId, tenantId]
   );
 
   logger.info('PIN reseteado por administrador', { usuario_id: usuarioId });
@@ -481,6 +497,16 @@ const listarUsuariosParaPin = async ({ tenantId }) => {
   return rows;
 };
 
+// ─────────────────────────────────────────────
+// Listar empresas (tenants) activas — pública
+// ─────────────────────────────────────────────
+const listarTenants = async () => {
+  const { rows } = await query(
+    'SELECT id, nombre, logo_url FROM tenants WHERE activo = TRUE ORDER BY nombre'
+  );
+  return rows;
+};
+
 module.exports = {
   loginEmail,
   loginPin,
@@ -490,8 +516,10 @@ module.exports = {
   cambiarPassword,
   listarUsuarios,
   obtenerUsuario,
+  obtenerMe,
   crearUsuario,
   actualizarUsuario,
   resetearPin,
   listarUsuariosParaPin,
+  listarTenants,
 };
