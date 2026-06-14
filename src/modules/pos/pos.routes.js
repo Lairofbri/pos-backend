@@ -4,8 +4,9 @@
 
 const { Router } = require('express');
 const controller  = require('./pos.controller');
-const { autenticar }                             = require('../../middlewares/auth.middleware');
-const { soloAdmin, adminOCajero, todosLosRoles } = require('../../middlewares/role.middleware');
+const { autenticar }                    = require('../../middlewares/auth.middleware');
+const { requierePermiso }               = require('../../middlewares/permisos.middleware');
+const { requiereCajaAbierta }           = require('../../middlewares/caja.middleware');
 
 const router = Router();
 
@@ -16,69 +17,41 @@ router.use(autenticar);
 // MESAS
 // ─────────────────────────────────────────────
 
-// Listar mesas — todos los roles (el POS las necesita)
-router.get('/mesas', todosLosRoles, controller.listarMesas);
-
-// Obtener una mesa — todos los roles
-router.get('/mesas/:id', todosLosRoles, controller.obtenerMesa);
-
-// Crear mesa — solo admin
-router.post('/mesas', soloAdmin, controller.crearMesa);
-
-// Actualizar mesa — solo admin
-router.patch('/mesas/:id', soloAdmin, controller.actualizarMesa);
+router.get('/mesas', requierePermiso('mesas.administrar'), controller.listarMesas);
+router.get('/mesas/:id', requierePermiso('mesas.administrar'), controller.obtenerMesa);
+router.post('/mesas', requiereCajaAbierta, requierePermiso('mesas.administrar'), controller.crearMesa);
+router.patch('/mesas/:id', requiereCajaAbierta, requierePermiso('mesas.administrar'), controller.actualizarMesa);
 
 // ─────────────────────────────────────────────
 // ÓRDENES
 // ─────────────────────────────────────────────
 
-// Listar órdenes — admin y cajero
-router.get('/ordenes', adminOCajero, controller.listarOrdenes);
-
-// Obtener detalle de orden — todos los roles
-router.get('/ordenes/:id', todosLosRoles, controller.obtenerOrden);
-
-// Crear orden — admin y cajero
-router.post('/ordenes', adminOCajero, controller.crearOrden);
-
-// Actualizar notas/descuento de orden — admin y cajero
-router.patch('/ordenes/:id', adminOCajero, controller.actualizarOrden);
-
-// Cambiar estado de orden — todos los roles
-// (el mesero puede marcar "lista", el cajero "pagada", etc.)
-router.patch('/ordenes/:id/estado', todosLosRoles, controller.cambiarEstadoOrden);
+router.get('/ordenes', requierePermiso('ordenes.ver'), controller.listarOrdenes);
+router.get('/ordenes/:id', requierePermiso('ordenes.ver'), controller.obtenerOrden);
+router.post('/ordenes', requiereCajaAbierta, requierePermiso('ordenes.crear'), controller.crearOrden);
+router.patch('/ordenes/:id', requiereCajaAbierta, requierePermiso('ordenes.actualizar'), controller.actualizarOrden);
+router.patch('/ordenes/:id/estado', requiereCajaAbierta, requierePermiso('ordenes.actualizar'), controller.cambiarEstadoOrden);
 
 // ─────────────────────────────────────────────
 // ITEMS DE ORDEN
 // ─────────────────────────────────────────────
 
-// Agregar item — admin y cajero
-router.post('/ordenes/:id/items', adminOCajero, controller.agregarItem);
-
-// Actualizar item — todos los roles (mesero puede actualizar estado desde cocina)
-router.patch('/ordenes/:id/items/:itemId', todosLosRoles, controller.actualizarItem);
-
-// Eliminar item — admin y cajero
-router.delete('/ordenes/:id/items/:itemId', adminOCajero, controller.eliminarItem);
+router.post('/ordenes/:id/items', requiereCajaAbierta, requierePermiso('items.agregar'), controller.agregarItem);
+router.patch('/ordenes/:id/items/:itemId', requiereCajaAbierta, requierePermiso('items.estado'), controller.actualizarItem);
+router.delete('/ordenes/:id/items/:itemId', requiereCajaAbierta, requierePermiso('items.eliminar'), controller.eliminarItem);
 
 // ─────────────────────────────────────────────
 // DIVIDIR CUENTA Y TRANSFERIR ITEMS
 // ─────────────────────────────────────────────
 
-// Dividir orden en dos cuentas — admin y cajero
-router.post('/ordenes/:id/split', adminOCajero, controller.splitOrden);
-
-// Transferir items a otra orden — admin y cajero
-router.post('/ordenes/:id/transferir', adminOCajero, controller.transferirItems);
-
-// Cambiar mesa de una orden — admin y cajero
-router.patch('/ordenes/:id/cambiar-mesa', adminOCajero, controller.cambiarMesa);
+router.post('/ordenes/:id/split', requiereCajaAbierta, requierePermiso('ordenes.actualizar'), controller.splitOrden);
+router.post('/ordenes/:id/transferir', requiereCajaAbierta, requierePermiso('ordenes.actualizar'), controller.transferirItems);
+router.patch('/ordenes/:id/cambiar-mesa', requiereCajaAbierta, requierePermiso('mesas.administrar'), controller.cambiarMesa);
 
 // ─────────────────────────────────────────────
 // PAGOS
 // ─────────────────────────────────────────────
 
-// Registrar pago — admin y cajero
-router.post('/ordenes/:id/pagar', adminOCajero, controller.registrarPago);
+router.post('/ordenes/:id/pagar', requiereCajaAbierta, requierePermiso('pago.registrar'), controller.registrarPago);
 
 module.exports = router;

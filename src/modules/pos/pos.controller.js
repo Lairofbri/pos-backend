@@ -243,10 +243,11 @@ const cambiarEstadoOrden = async (req, res) => {
 
   try {
     await service.cambiarEstadoOrden({
-      tenantId: req.usuario.tenant_id,
-      ordenId:  req.params.id,
-      estado:   value.estado,
-      motivo:   value.motivo,
+      tenantId:  req.usuario.tenant_id,
+      ordenId:   req.params.id,
+      estado:    value.estado,
+      motivo:    value.motivo,
+      usuarioId: req.usuario.id,
     });
     return exito(res, null, `Orden marcada como "${value.estado}".`);
   } catch (err) {

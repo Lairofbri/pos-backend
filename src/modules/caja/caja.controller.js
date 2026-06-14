@@ -8,6 +8,7 @@ const {
   cerrarCajaSchema,
   movimientoSchema,
   filtrosCajaSchema,
+  resumenDiarioSchema,
 } = require('./caja.schema');
 const {
   exito,
@@ -195,6 +196,24 @@ const getHistorialCajas = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/caja/resumen-diario
+ */
+const getResumenDiario = async (req, res) => {
+  const { error: validacionError, value } = resumenDiarioSchema.validate(req.query);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
+  try {
+    const resumen = await service.resumenDiario({
+      tenantId: req.usuario.tenant_id,
+      fecha: value.fecha || null,
+    });
+    return exito(res, { resumen });
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
 module.exports = {
   abrirCaja,
   getCajaActiva,
@@ -202,4 +221,5 @@ module.exports = {
   registrarMovimiento,
   getMovimientos,
   getHistorialCajas,
+  getResumenDiario,
 };

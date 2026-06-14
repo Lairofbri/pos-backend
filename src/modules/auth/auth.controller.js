@@ -115,7 +115,15 @@ const logout = async (req, res) => {
 // GET /auth/me
 // ─────────────────────────────────────────────
 const me = async (req, res) => {
-  return exito(res, { usuario: req.usuario }, 'Datos del usuario actual.');
+  try {
+    const usuario = await authService.obtenerMe({
+      usuarioId: req.usuario.id,
+      tenantId:  req.usuario.tenant_id,
+    });
+    return exito(res, { usuario }, 'Datos del usuario actual.');
+  } catch (err) {
+    return manejarError(res, err);
+  }
 };
 
 // ─────────────────────────────────────────────
@@ -287,7 +295,7 @@ const resetearPin = async (req, res) => {
 const listarTenants = async (_req, res) => {
   try {
     const tenants = await authService.listarTenants();
-    return exito(res, tenants);
+    return exito(res, { tenants });
   } catch (err) {
     return manejarError(res, err);
   }

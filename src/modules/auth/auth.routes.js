@@ -4,7 +4,7 @@
 const { Router } = require('express');
 const controller = require('./auth.controller');
 const { autenticar } = require('../../middlewares/auth.middleware');
-const { soloAdmin, todosLosRoles } = require('../../middlewares/role.middleware');
+const { requierePermiso } = require('../../middlewares/permisos.middleware');
 
 const router = Router();
 
@@ -40,29 +40,29 @@ router.post('/auth/logout', autenticar, controller.logout);
 // Datos del usuario actual
 router.get('/auth/me', autenticar, controller.me);
 
-// Cambiar PIN propio (cualquier rol)
-router.put('/auth/cambiar-pin', autenticar, todosLosRoles, controller.cambiarPin);
+// Cambiar PIN propio
+router.put('/auth/cambiar-pin', autenticar, controller.cambiarPin);
 
-// Cambiar password propio (solo admin — solo ellos tienen password web)
-router.put('/auth/cambiar-password', autenticar, soloAdmin, controller.cambiarPassword);
+// Cambiar password propio (solo usuarios con permiso)
+router.put('/auth/cambiar-password', autenticar, requierePermiso('usuarios.editar'), controller.cambiarPassword);
 
 // ─────────────────────────────────────────────
-// Gestión de usuarios — solo administrador
+// Gestión de usuarios
 // ─────────────────────────────────────────────
 
 // Listar todos los usuarios del restaurante
-router.get('/usuarios', autenticar, soloAdmin, controller.listarUsuarios);
+router.get('/usuarios', autenticar, requierePermiso('usuarios.ver'), controller.listarUsuarios);
 
 // Obtener un usuario específico
-router.get('/usuarios/:id', autenticar, soloAdmin, controller.obtenerUsuario);
+router.get('/usuarios/:id', autenticar, requierePermiso('usuarios.ver'), controller.obtenerUsuario);
 
 // Crear nuevo usuario (cajero, mesero, etc.)
-router.post('/usuarios', autenticar, soloAdmin, controller.crearUsuario);
+router.post('/usuarios', autenticar, requierePermiso('usuarios.crear'), controller.crearUsuario);
 
 // Actualizar datos de un usuario
-router.patch('/usuarios/:id', autenticar, soloAdmin, controller.actualizarUsuario);
+router.patch('/usuarios/:id', autenticar, requierePermiso('usuarios.editar'), controller.actualizarUsuario);
 
-// Resetear PIN de un usuario (admin puede resetear el PIN de cualquiera)
-router.post('/usuarios/:id/resetear-pin', autenticar, soloAdmin, controller.resetearPin);
+// Resetear PIN de un usuario
+router.post('/usuarios/:id/resetear-pin', autenticar, requierePermiso('usuarios.reset-pin'), controller.resetearPin);
 
 module.exports = router;

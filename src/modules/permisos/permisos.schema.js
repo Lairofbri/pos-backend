@@ -1,20 +1,13 @@
 // src/modules/permisos/permisos.schema.js
 // Esquemas de validación Joi — Módulo Permisos
-// Principio S (SOLID): solo valida, no opera ni responde
+// Los roles válidos se obtienen desde la BD vía fn_roles_validos()
 
 const Joi = require('joi');
 
-// Roles válidos del sistema
-const ROLES_VALIDOS = ['administrador', 'gerente', 'cajero', 'mesero', 'cocinero'];
-
 const rolParamSchema = Joi.object({
-  rol: Joi.string()
-    .valid(...ROLES_VALIDOS)
-    .required()
-    .messages({
-      'any.only': `El rol debe ser: ${ROLES_VALIDOS.join(', ')}.`,
-      'any.required': 'El parámetro rol es requerido.',
-    }),
+  rol: Joi.string().required().messages({
+    'any.required': 'El parámetro rol es requerido.',
+  }),
 });
 
 const actualizarPermisosSchema = Joi.object({
@@ -34,7 +27,6 @@ const actualizarPermisosSchema = Joi.object({
 });
 
 module.exports = {
-  ROLES_VALIDOS,
   rolParamSchema,
   actualizarPermisosSchema,
 };

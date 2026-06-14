@@ -2,7 +2,6 @@
 // Orquesta los requests HTTP del módulo de menús
 
 const service = require('./menus.service');
-const { query } = require('../../config/database');
 const { exito, creado, error, errorServidor } = require('../../utils/response');
 const { esUuidValido } = require('../../middlewares/uuid.middleware');
 const { crearMenuSchema, actualizarMenuSchema } = require('./menus.schema');
@@ -16,36 +15,17 @@ const manejarError = (res, err) => {
   return errorServidor(res);
 };
 
-/**
- * GET /api/menus
- * Devuelve el árbol de menús filtrado por los permisos del usuario autenticado
- */
 const listarMenus = async (req, res) => {
   try {
-    let permisosUsuario = null;
-    if (req.usuario.rol !== 'administrador') {
-      const { rows } = await query(
-        `SELECT p.codigo
-         FROM rol_permisos rp
-         JOIN permisos p ON p.id = rp.permiso_id
-         WHERE rp.rol = $1 AND rp.tenant_id = $2 AND rp.activo = TRUE`,
-        [req.usuario.rol, req.usuario.tenant_id]
-      );
-      permisosUsuario = rows.map(r => r.codigo);
-    }
-
     const menus = await service.obtenerMenus({
       tenantId: req.usuario.tenant_id,
-      permisosUsuario,
+      rol: req.usuario.rol,
+      esAdmin: req.usuario.rol === 'administrador',
     });
-
-    return exito(res, menus);
+    return exito(res, { menus });
   } catch (err) { return manejarError(res, err); }
 };
 
-/**
- * GET /api/menus/:id
- */
 const obtenerMenu = async (req, res) => {
   if (!esUuidValido(req.params.id)) {
     return error(res, 'El ID de menú no tiene un formato UUID válido.', 400);
@@ -60,9 +40,6 @@ const obtenerMenu = async (req, res) => {
   } catch (err) { return manejarError(res, err); }
 };
 
-/**
- * POST /api/menus
- */
 const crearMenu = async (req, res) => {
   const { error: validacionError, value } = crearMenuSchema.validate(req.body);
   if (validacionError) return error(res, validacionError.details[0].message, 400);
@@ -76,9 +53,6 @@ const crearMenu = async (req, res) => {
   } catch (err) { return manejarError(res, err); }
 };
 
-/**
- * PATCH /api/menus/:id
- */
 const actualizarMenu = async (req, res) => {
   if (!esUuidValido(req.params.id)) {
     return error(res, 'El ID de menú no tiene un formato UUID válido.', 400);
@@ -97,9 +71,6 @@ const actualizarMenu = async (req, res) => {
   } catch (err) { return manejarError(res, err); }
 };
 
-/**
- * DELETE /api/menus/:id
- */
 const desactivarMenu = async (req, res) => {
   if (!esUuidValido(req.params.id)) {
     return error(res, 'El ID de menú no tiene un formato UUID válido.', 400);

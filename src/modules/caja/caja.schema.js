@@ -73,9 +73,16 @@ const filtrosCajaSchema = Joi.object({
   limite:      Joi.number().integer().min(1).max(100).optional().default(20),
 });
 
+const resumenDiarioSchema = Joi.object({
+  fecha: Joi.date().iso().optional().messages({
+    'date.format': 'La fecha debe tener formato ISO (YYYY-MM-DD).',
+  }),
+});
+
 module.exports = {
   abrirCajaSchema,
   cerrarCajaSchema,
   movimientoSchema,
   filtrosCajaSchema,
+  resumenDiarioSchema,
 };

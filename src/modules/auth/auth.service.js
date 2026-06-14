@@ -71,6 +71,7 @@ const formatearUsuario = (row) => ({
   apellido:    row.apellido,
   email:       row.email,
   rol:         row.rol,
+  activo:      row.activo,
   ultimo_acceso: row.ultimo_acceso,
 });
 
@@ -379,6 +380,22 @@ const obtenerUsuario = async ({ tenantId, usuarioId }) => {
   return rows[0];
 };
 
+const obtenerMe = async ({ usuarioId, tenantId }) => {
+  const { rows } = await query(
+    `SELECT id, nombre, apellido, email, rol, sucursal_id, activo, ultimo_acceso
+     FROM usuarios
+     WHERE id = $1 AND tenant_id = $2`,
+    [usuarioId, tenantId]
+  );
+  if (rows.length === 0) {
+    throw { status: 401, mensaje: 'Usuario no encontrado.' };
+  }
+  if (!rows[0].activo) {
+    throw { status: 403, mensaje: 'Cuenta de usuario desactivada.' };
+  }
+  return rows[0];
+};
+
 const crearUsuario = async ({ tenantId, datos }) => {
   const { nombre, apellido, email, pin, password, rol, sucursal_id } = datos;
 
@@ -499,6 +516,7 @@ module.exports = {
   cambiarPassword,
   listarUsuarios,
   obtenerUsuario,
+  obtenerMe,
   crearUsuario,
   actualizarUsuario,
   resetearPin,
