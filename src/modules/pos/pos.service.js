@@ -170,6 +170,7 @@ const actualizarMesa = async ({ tenantId, mesaId, datos }) => {
   if (datos.capacidad !== undefined) { campos.push(`capacidad = $${idx++}`); valores.push(datos.capacidad); }
   if (datos.zona     !== undefined) { campos.push(`zona = $${idx++}`);     valores.push(datos.zona); }
   if (datos.activo   !== undefined) { campos.push(`activo = $${idx++}`);   valores.push(datos.activo); }
+  if (datos.estado   !== undefined) { campos.push(`estado = $${idx++}`);   valores.push(datos.estado); }
 
   valores.push(mesaId, tenantId);
 

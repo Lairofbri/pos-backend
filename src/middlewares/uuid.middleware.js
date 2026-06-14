@@ -5,8 +5,8 @@
 
 const { error } = require('../utils/response');
 
-// Regex UUID v4 estándar
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Regex UUID v4 estándar (versión 4 + variante [89ab])
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * Valida si un string es un UUID v4 válido

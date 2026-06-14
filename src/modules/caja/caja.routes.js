@@ -18,7 +18,7 @@ router.use(autenticar);
 // ─────────────────────────────────────────────
 
 router.get('/caja/historial', requierePermiso('caja.historial'), controller.getHistorialCajas);
-router.get('/caja/activa', requierePermiso('caja.movimientos'), controller.getCajaActiva);
+router.get('/caja/activa', controller.getCajaActiva);
 router.post('/caja/abrir', requierePermiso('caja.abrir'), controller.abrirCaja);
 router.post('/caja/cerrar', requiereCajaAbierta, requierePermiso('caja.cerrar'), controller.cerrarCaja);
 router.post('/caja/movimiento', requiereCajaAbierta, requierePermiso('caja.movimientos'), controller.registrarMovimiento);

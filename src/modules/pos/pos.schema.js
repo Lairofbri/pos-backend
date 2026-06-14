@@ -27,6 +27,8 @@ const actualizarMesaSchema = Joi.object({
   capacidad:  Joi.number().integer().min(1).optional(),
   zona:       Joi.string().max(50).optional().allow('', null),
   activo:     Joi.boolean().optional(),
+  // Validado contra catalogos (grupo: estados_mesa) + CHECK constraint en BD
+  estado:     Joi.string().optional(),
 }).min(1);
 
 // ─────────────────────────────────────────────

@@ -11,7 +11,7 @@ const router = Router();
 router.use(autenticar);
 
 router.get('/menus', controller.listarMenus);
-router.get('/menus/:id', controller.obtenerMenu);
+router.get('/menus/:id', requierePermiso('menus.ver'), controller.obtenerMenu);
 
 router.post('/menus', requierePermiso('menus.crear'), controller.crearMenu);
 router.patch('/menus/:id', requierePermiso('menus.editar'), controller.actualizarMenu);

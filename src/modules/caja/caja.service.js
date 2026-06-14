@@ -443,9 +443,28 @@ const resumenDiario = async ({ tenantId, fecha }) => {
 
   const { total_ordenes, total_ingresos } = totalRows[0];
 
+  // Conteo de órdenes pagadas del día y clientes atendidos
+  const { rows: ordenesRows } = await query(
+    `SELECT
+       COUNT(*)::int AS cantidad_ordenes,
+       COUNT(*) FILTER (WHERE cliente_id IS NOT NULL)::int AS clientes_atendidos
+     FROM ordenes
+     WHERE tenant_id = $1 AND estado = 'pagada' AND creado_en::date = $2::date`,
+    [tenantId, fechaStr]
+  );
+
+  const { cantidad_ordenes, clientes_atendidos } = ordenesRows[0];
+
+  const ticket_promedio = cantidad_ordenes > 0
+    ? Number((Number(total_ingresos) / cantidad_ordenes).toFixed(2))
+    : 0;
+
   return {
     total_ordenes,
     total_ingresos: String(Number(total_ingresos).toFixed(2)),
+    cantidad_ordenes,
+    ticket_promedio,
+    clientes_atendidos,
     metodos: metodos.map(m => ({
       metodo: m.metodo,
       cantidad_ordenes: m.cantidad_ordenes,

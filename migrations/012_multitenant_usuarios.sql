@@ -8,6 +8,9 @@
 -- empresas distintas sí pueden.
 -- =============================================
 
+-- Eliminar constraint UNIQUE global de la columna email (creada en 001_init_auth.sql)
+ALTER TABLE usuarios DROP CONSTRAINT IF EXISTS usuarios_email_key;
+
 -- Eliminar índice viejo (global, no único)
 DROP INDEX IF EXISTS idx_usuarios_email;
 
