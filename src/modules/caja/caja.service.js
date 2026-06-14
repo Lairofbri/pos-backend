@@ -34,7 +34,7 @@ const obtenerCajaAbierta = async ({ tenantId, sucursalId = null }) => {
        c.total_retiros, c.total_depositos,
        c.fecha_apertura,
        c.usuario_apertura_id,
-       u.nombre AS usuario_apertura_nombre
+       u.nombre AS usuario_apertura
      FROM cajas c
      JOIN usuarios u ON u.id = c.usuario_apertura_id
      WHERE ${condiciones.join(' AND ')}
@@ -96,7 +96,7 @@ const recalcularTotalesCaja = async (client, cajaId) => {
  * Solo puede haber una caja abierta por tenant/sucursal
  */
 const abrirCaja = async ({ tenantId, usuarioId, datos }) => {
-  const { monto_inicial, sucursal_id } = datos;
+  const { monto_inicial, sucursal_id, notas } = datos;
 
   // Verificar que no haya una caja abierta
   const cajaAbierta = await obtenerCajaAbierta({ tenantId, sucursalId: sucursal_id });
@@ -113,15 +113,15 @@ const abrirCaja = async ({ tenantId, usuarioId, datos }) => {
 
     const { rows } = await client.query(
       `INSERT INTO cajas
-         (tenant_id, sucursal_id, usuario_apertura_id, monto_inicial, total_esperado)
-       VALUES ($1, $2, $3, $4, $4)
+         (tenant_id, sucursal_id, usuario_apertura_id, monto_inicial, total_esperado, notas_apertura)
+       VALUES ($1, $2, $3, $4, $4, $5)
        RETURNING
          id, tenant_id, sucursal_id, estado,
          monto_inicial, total_esperado,
          total_ventas, total_efectivo, total_tarjeta,
          total_retiros, total_depositos,
-         fecha_apertura, usuario_apertura_id`,
-      [tenantId, sucursal_id || null, usuarioId, monto_inicial]
+         notas_apertura, fecha_apertura, usuario_apertura_id`,
+      [tenantId, sucursal_id || null, usuarioId, monto_inicial, notas || null]
     );
 
     await client.query('COMMIT');
@@ -161,10 +161,10 @@ const getCajaActiva = async ({ tenantId, sucursalId = null }) => {
        u.nombre AS usuario_nombre
      FROM movimientos_caja m
      JOIN usuarios u ON u.id = m.usuario_id
-     WHERE m.caja_id = $1
+     WHERE m.caja_id = $1 AND m.tenant_id = $2
      ORDER BY m.creado_en DESC
      LIMIT 10`,
-    [caja.id]
+    [caja.id, caja.tenant_id]
   );
 
   return { ...caja, movimientos_recientes: movimientos };
@@ -362,6 +362,40 @@ const getHistorialCajas = async ({ tenantId, filtros = {} }) => {
     [...valores, limite, offset]
   );
 
+  // Obtener desglose por método de pago para las cajas de esta página
+  if (rows.length > 0) {
+    const cajaIds = rows.map(r => r.id);
+    const { rows: metodosRows } = await query(
+      `SELECT
+         c.id AS caja_id,
+         p.metodo,
+         COUNT(DISTINCT p.orden_id)::int AS cantidad_ordenes,
+         SUM(p.total_pagado) AS total
+       FROM cajas c
+       JOIN pagos p ON p.tenant_id = c.tenant_id
+         AND p.creado_en >= c.fecha_apertura
+         AND (c.fecha_cierre IS NULL OR p.creado_en <= c.fecha_cierre)
+       WHERE c.id = ANY($1::uuid[])
+       GROUP BY c.id, p.metodo
+       ORDER BY c.id, p.metodo`,
+      [cajaIds]
+    );
+
+    const metodosPorCaja = {};
+    for (const mr of metodosRows) {
+      if (!metodosPorCaja[mr.caja_id]) metodosPorCaja[mr.caja_id] = [];
+      metodosPorCaja[mr.caja_id].push({
+        metodo: mr.metodo,
+        cantidad_ordenes: mr.cantidad_ordenes,
+        total: String(Number(mr.total).toFixed(2)),
+      });
+    }
+
+    for (const caja of rows) {
+      caja.metodos = metodosPorCaja[caja.id] || [];
+    }
+  }
+
   const { rows: conteo } = await query(
     `SELECT COUNT(*) as total FROM cajas c WHERE ${condiciones.join(' AND ')}`,
     valores
@@ -378,6 +412,67 @@ const getHistorialCajas = async ({ tenantId, filtros = {} }) => {
   };
 };
 
+/**
+ * Resumen diario de órdenes pagadas agrupadas por método de pago
+ * Para la pantalla de cierre de caja
+ */
+const resumenDiario = async ({ tenantId, fecha }) => {
+  const fechaObj = fecha || new Date();
+  const fechaStr = fechaObj.toISOString().split('T')[0];
+
+  const { rows: metodos } = await query(
+    `SELECT
+       p.metodo,
+       COUNT(DISTINCT p.orden_id)::int AS cantidad_ordenes,
+       SUM(p.total_pagado) AS total
+     FROM pagos p
+     WHERE p.tenant_id = $1 AND p.creado_en::date = $2::date
+     GROUP BY p.metodo
+     ORDER BY p.metodo`,
+    [tenantId, fechaStr]
+  );
+
+  const { rows: totalRows } = await query(
+    `SELECT
+       COUNT(DISTINCT p.orden_id)::int AS total_ordenes,
+       COALESCE(SUM(p.total_pagado), 0) AS total_ingresos
+     FROM pagos p
+     WHERE p.tenant_id = $1 AND p.creado_en::date = $2::date`,
+    [tenantId, fechaStr]
+  );
+
+  const { total_ordenes, total_ingresos } = totalRows[0];
+
+  // Conteo de órdenes pagadas del día y clientes atendidos
+  const { rows: ordenesRows } = await query(
+    `SELECT
+       COUNT(*)::int AS cantidad_ordenes,
+       COUNT(*) FILTER (WHERE cliente_id IS NOT NULL)::int AS clientes_atendidos
+     FROM ordenes
+     WHERE tenant_id = $1 AND estado = 'pagada' AND creado_en::date = $2::date`,
+    [tenantId, fechaStr]
+  );
+
+  const { cantidad_ordenes, clientes_atendidos } = ordenesRows[0];
+
+  const ticket_promedio = cantidad_ordenes > 0
+    ? Number((Number(total_ingresos) / cantidad_ordenes).toFixed(2))
+    : 0;
+
+  return {
+    total_ordenes,
+    total_ingresos: String(Number(total_ingresos).toFixed(2)),
+    cantidad_ordenes,
+    ticket_promedio,
+    clientes_atendidos,
+    metodos: metodos.map(m => ({
+      metodo: m.metodo,
+      cantidad_ordenes: m.cantidad_ordenes,
+      total: String(Number(m.total).toFixed(2)),
+    })),
+  };
+};
+
 module.exports = {
   abrirCaja,
   getCajaActiva,
@@ -387,4 +482,5 @@ module.exports = {
   getMovimientos,
   getHistorialCajas,
   obtenerCajaAbierta,
+  resumenDiario,
 };

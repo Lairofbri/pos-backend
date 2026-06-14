@@ -51,7 +51,7 @@ const listarCategorias = async (req, res) => {
       tenantId: req.usuario.tenant_id,
       soloActivas,
     });
-    return exito(res, categorias);
+    return exito(res, { categorias });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -71,7 +71,7 @@ const obtenerCategoria = async (req, res) => {
       tenantId:    req.usuario.tenant_id,
       categoriaId: req.params.id,
     });
-    return exito(res, categoria);
+    return exito(res, { categoria });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -89,7 +89,7 @@ const crearCategoria = async (req, res) => {
       tenantId: req.usuario.tenant_id,
       datos:    value,
     });
-    return creado(res, categoria, 'Categoría creada exitosamente.');
+    return creado(res, { categoria }, 'Categoría creada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -113,7 +113,7 @@ const actualizarCategoria = async (req, res) => {
       categoriaId: req.params.id,
       datos:       value,
     });
-    return exito(res, categoria, 'Categoría actualizada exitosamente.');
+    return exito(res, { categoria }, 'Categoría actualizada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -149,7 +149,7 @@ const desactivarCategoria = async (req, res) => {
 const stockBajo = async (req, res) => {
   try {
     const productos = await service.productosStockBajo({ tenantId: req.usuario.tenant_id });
-    return exito(res, productos);
+    return exito(res, { productos });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -210,7 +210,7 @@ const obtenerProducto = async (req, res) => {
       tenantId:   req.usuario.tenant_id,
       productoId: req.params.id,
     });
-    return exito(res, producto);
+    return exito(res, { producto });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -228,7 +228,7 @@ const crearProducto = async (req, res) => {
       tenantId: req.usuario.tenant_id,
       datos:    value,
     });
-    return creado(res, producto, 'Producto creado exitosamente.');
+    return creado(res, { producto }, 'Producto creado exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -252,7 +252,7 @@ const actualizarProducto = async (req, res) => {
       productoId: req.params.id,
       datos:      value,
     });
-    return exito(res, producto, 'Producto actualizado exitosamente.');
+    return exito(res, { producto }, 'Producto actualizado exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -273,7 +273,7 @@ const toggleProducto = async (req, res) => {
       productoId: req.params.id,
     });
     const msg = resultado.activo ? 'Producto activado.' : 'Producto desactivado.';
-    return exito(res, resultado, msg);
+    return exito(res, { producto: resultado }, msg);
   } catch (err) {
     return manejarError(res, err);
   }
@@ -319,7 +319,7 @@ const ajustarStock = async (req, res) => {
       tipo:       value.tipo,
       motivo:     value.motivo,
     });
-    return exito(res, producto, 'Stock ajustado exitosamente.');
+    return exito(res, { producto }, 'Stock ajustado exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }

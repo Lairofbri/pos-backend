@@ -52,8 +52,9 @@ components:
     # ── Auth ──
     LoginRequest:
       type: object
-      required: [email, password]
+      required: [email, password, tenant_id]
       properties:
+        tenant_id: { type: string, format: uuid, description: "ID de la empresa" }
         email: { type: string, format: email }
         password: { type: string, minLength: 8 }
     LoginPinRequest:

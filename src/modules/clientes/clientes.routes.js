@@ -4,8 +4,8 @@
 
 const { Router } = require('express');
 const controller  = require('./clientes.controller');
-const { autenticar }                             = require('../../middlewares/auth.middleware');
-const { soloAdmin, adminOCajero, todosLosRoles } = require('../../middlewares/role.middleware');
+const { autenticar }         = require('../../middlewares/auth.middleware');
+const { requierePermiso }    = require('../../middlewares/permisos.middleware');
 
 const router = Router();
 
@@ -17,23 +17,11 @@ router.use(autenticar);
 // para que Express no confunda 'buscar' con un UUID
 // ─────────────────────────────────────────────
 
-// Búsqueda rápida para el POS — todos los roles
-// GET /api/clientes/buscar?q=texto
-router.get('/clientes/buscar', todosLosRoles, controller.buscarClientes);
-
-// Listar clientes con filtros — admin y cajero
-router.get('/clientes', adminOCajero, controller.listarClientes);
-
-// Obtener cliente por ID — todos los roles
-router.get('/clientes/:id', todosLosRoles, controller.obtenerCliente);
-
-// Crear cliente — admin y cajero
-router.post('/clientes', adminOCajero, controller.crearCliente);
-
-// Actualizar cliente — admin y cajero
-router.patch('/clientes/:id', adminOCajero, controller.actualizarCliente);
-
-// Desactivar cliente — solo admin
-router.delete('/clientes/:id', soloAdmin, controller.desactivarCliente);
+router.get('/clientes/buscar', requierePermiso('clientes.ver'), controller.buscarClientes);
+router.get('/clientes', requierePermiso('clientes.ver'), controller.listarClientes);
+router.get('/clientes/:id', requierePermiso('clientes.ver'), controller.obtenerCliente);
+router.post('/clientes', requierePermiso('clientes.crear'), controller.crearCliente);
+router.patch('/clientes/:id', requierePermiso('clientes.editar'), controller.actualizarCliente);
+router.delete('/clientes/:id', requierePermiso('clientes.desactivar'), controller.desactivarCliente);
 
 module.exports = router;

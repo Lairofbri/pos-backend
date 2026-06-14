@@ -2,6 +2,7 @@
 // Lógica de negocio para pantalla de cocina y comandas
 
 const { query } = require('../../config/database');
+const { ESTADOS_COCINA } = require('../../utils/constants');
 
 /**
  * Listar items activos en cocina (en_proceso o listos)

@@ -82,7 +82,7 @@ const buscarClientes = async (req, res) => {
       tenantId: req.usuario.tenant_id,
       q,
     });
-    return exito(res, clientes);
+    return exito(res, { clientes });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -102,7 +102,7 @@ const obtenerCliente = async (req, res) => {
       tenantId:  req.usuario.tenant_id,
       clienteId: req.params.id,
     });
-    return exito(res, cliente);
+    return exito(res, { cliente });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -120,7 +120,7 @@ const crearCliente = async (req, res) => {
       tenantId: req.usuario.tenant_id,
       datos:    value,
     });
-    return creado(res, cliente, 'Cliente creado exitosamente.');
+    return creado(res, { cliente }, 'Cliente creado exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -144,7 +144,7 @@ const actualizarCliente = async (req, res) => {
       clienteId: req.params.id,
       datos:     value,
     });
-    return exito(res, cliente, 'Cliente actualizado exitosamente.');
+    return exito(res, { cliente }, 'Cliente actualizado exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }

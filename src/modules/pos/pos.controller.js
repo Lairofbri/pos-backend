@@ -57,7 +57,7 @@ const listarMesas = async (req, res) => {
       tenantId: req.usuario.tenant_id,
       soloActivas,
     });
-    return exito(res, mesas);
+    return exito(res, { mesas });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -77,7 +77,7 @@ const obtenerMesa = async (req, res) => {
       tenantId: req.usuario.tenant_id,
       mesaId:   req.params.id,
     });
-    return exito(res, mesa);
+    return exito(res, { mesa });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -95,7 +95,7 @@ const crearMesa = async (req, res) => {
       tenantId: req.usuario.tenant_id,
       datos:    value,
     });
-    return creado(res, mesa, 'Mesa creada exitosamente.');
+    return creado(res, { mesa }, 'Mesa creada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -119,7 +119,7 @@ const actualizarMesa = async (req, res) => {
       mesaId:   req.params.id,
       datos:    value,
     });
-    return exito(res, mesa, 'Mesa actualizada exitosamente.');
+    return exito(res, { mesa }, 'Mesa actualizada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -180,7 +180,7 @@ const obtenerOrden = async (req, res) => {
       tenantId: req.usuario.tenant_id,
       ordenId:  req.params.id,
     });
-    return exito(res, orden);
+    return exito(res, { orden });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -199,7 +199,7 @@ const crearOrden = async (req, res) => {
       usuarioId: req.usuario.id,
       datos:     value,
     });
-    return creado(res, orden, 'Orden creada exitosamente.');
+    return creado(res, { orden }, 'Orden creada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -243,10 +243,11 @@ const cambiarEstadoOrden = async (req, res) => {
 
   try {
     await service.cambiarEstadoOrden({
-      tenantId: req.usuario.tenant_id,
-      ordenId:  req.params.id,
-      estado:   value.estado,
-      motivo:   value.motivo,
+      tenantId:  req.usuario.tenant_id,
+      ordenId:   req.params.id,
+      estado:    value.estado,
+      motivo:    value.motivo,
+      usuarioId: req.usuario.id,
     });
     return exito(res, null, `Orden marcada como "${value.estado}".`);
   } catch (err) {
