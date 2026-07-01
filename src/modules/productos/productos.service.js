@@ -4,15 +4,16 @@
 // Principio O (SOLID): extensible sin modificar — agregar métodos no rompe los existentes
 
 const { query } = require('../../config/database');
-const logger    = require('../../utils/logger');
+const { subirImagen, eliminarImagen } = require('../../config/storage');
+const logger = require('../../utils/logger');
 
 // ═════════════════════════════════════════════
 // CATEGORÍAS
 // ═════════════════════════════════════════════
 
 /**
- * Listar todas las categorías activas del tenant
- * Ordenadas por el campo `orden` para respetar el orden del menú
+ * Listar todas las categorías del tenant (lista plana)
+ * Ordenadas por orden ASC, nombre ASC
  */
 const listarCategorias = async ({ tenantId, soloActivas = true }) => {
   const condicion = soloActivas
@@ -20,7 +21,7 @@ const listarCategorias = async ({ tenantId, soloActivas = true }) => {
     : 'WHERE tenant_id = $1';
 
   const { rows } = await query(
-    `SELECT id, nombre, descripcion, orden, color, activo, creado_en
+    `SELECT id, parent_id, nombre, descripcion, orden, color, activo, creado_en
      FROM categorias
      ${condicion}
      ORDER BY orden ASC, nombre ASC`,
@@ -30,37 +31,115 @@ const listarCategorias = async ({ tenantId, soloActivas = true }) => {
 };
 
 /**
+ * Obtener el árbol completo de categorías con CTE recursivo
+ */
+const listarArbolCategorias = async ({ tenantId, soloActivas = true }) => {
+  const condicion = soloActivas ? 'FALSE' : 'TRUE';
+
+  const { rows } = await query(
+    `WITH RECURSIVE arbol AS (
+       SELECT id, parent_id, nombre, descripcion, orden, color, activo, creado_en, 0 AS nivel
+       FROM categorias
+       WHERE tenant_id = $1 AND parent_id IS NULL AND (${condicion} OR activo = TRUE)
+       UNION ALL
+       SELECT c.id, c.parent_id, c.nombre, c.descripcion, c.orden, c.color, c.activo, c.creado_en, a.nivel + 1
+       FROM categorias c
+       JOIN arbol a ON c.parent_id = a.id
+       WHERE c.tenant_id = $1 AND (${condicion} OR c.activo = TRUE)
+     )
+     SELECT id, parent_id, nombre, descripcion, orden, color, activo, creado_en, nivel
+     FROM arbol
+     ORDER BY nivel, orden ASC, nombre ASC`,
+    [tenantId]
+  );
+
+  const mapa = {};
+  for (const c of rows) {
+    c.hijos = [];
+    mapa[c.id] = c;
+  }
+
+  const arbol = [];
+  for (const c of rows) {
+    if (c.parent_id && mapa[c.parent_id]) {
+      mapa[c.parent_id].hijos.push(c);
+    } else if (!c.parent_id) {
+      arbol.push(c);
+    }
+  }
+
+  return arbol;
+};
+
+/**
  * Obtener una categoría por ID verificando que pertenece al tenant
+ * Incluye información de padre e hijos
  */
 const obtenerCategoria = async ({ tenantId, categoriaId }) => {
   const { rows } = await query(
-    `SELECT id, nombre, descripcion, orden, color, activo, creado_en
-     FROM categorias
-     WHERE id = $1 AND tenant_id = $2`,
+    `SELECT c.id, c.parent_id, c.nombre, c.descripcion, c.orden, c.color, c.activo, c.creado_en,
+            (SELECT jsonb_agg(jsonb_build_object('id', h.id, 'nombre', h.nombre))
+             FROM categorias h WHERE h.parent_id = c.id AND h.tenant_id = c.tenant_id
+            ) AS hijos,
+            (SELECT COUNT(*) FROM categorias h WHERE h.parent_id = c.id AND h.tenant_id = c.tenant_id) AS total_hijos
+     FROM categorias c
+     WHERE c.id = $1 AND c.tenant_id = $2`,
     [categoriaId, tenantId]
   );
   if (rows.length === 0) {
     throw { status: 404, mensaje: 'Categoría no encontrada.' };
   }
-  return rows[0];
+
+  const categoria = rows[0];
+  categoria.hijos = categoria.hijos || [];
+  delete categoria.total_hijos;
+  return categoria;
 };
 
 /**
  * Crear una nueva categoría
- * Verifica que no exista otra con el mismo nombre en el tenant
+ * Si tiene parent_id, verifica que exista y pertenezca al mismo tenant
  */
 const crearCategoria = async ({ tenantId, datos }) => {
-  const { nombre, descripcion, orden, color } = datos;
+  const { nombre, descripcion, parent_id, orden, color } = datos;
+
+  if (parent_id) {
+    await validarCategoriaPadre({ tenantId, parentId: parent_id });
+  }
 
   const { rows } = await query(
-    `INSERT INTO categorias (tenant_id, nombre, descripcion, orden, color)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, nombre, descripcion, orden, color, activo, creado_en`,
-    [tenantId, nombre, descripcion || null, orden ?? 0, color || null]
+    `INSERT INTO categorias (tenant_id, nombre, descripcion, parent_id, orden, color)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, parent_id, nombre, descripcion, orden, color, activo, creado_en`,
+    [tenantId, nombre, descripcion || null, parent_id || null, orden ?? 0, color || null]
   );
 
-  logger.info('Categoría creada', { tenant_id: tenantId, nombre });
+  logger.info('Categoría creada', { tenant_id: tenantId, nombre, parent_id: parent_id || null });
   return rows[0];
+};
+
+/**
+ * Validar que una categoría padre existe y pertenece al tenant
+ */
+const validarCategoriaPadre = async ({ tenantId, parentId }) => {
+  const { rows } = await query(
+    'SELECT id FROM categorias WHERE id = $1 AND tenant_id = $2',
+    [parentId, tenantId]
+  );
+  if (rows.length === 0) {
+    throw { status: 404, mensaje: 'La categoría padre indicada no existe.' };
+  }
+};
+
+/**
+ * Verificar si una categoría es hoja (no tiene hijos)
+ */
+const esCategoriaHoja = async ({ tenantId, categoriaId }) => {
+  const { rows } = await query(
+    'SELECT COUNT(*) AS total FROM categorias WHERE parent_id = $1 AND tenant_id = $2',
+    [categoriaId, tenantId]
+  );
+  return parseInt(rows[0].total) === 0;
 };
 
 /**
@@ -68,16 +147,24 @@ const crearCategoria = async ({ tenantId, datos }) => {
  * Solo actualiza los campos enviados (PATCH semántico)
  */
 const actualizarCategoria = async ({ tenantId, categoriaId, datos }) => {
-  // Verificar que existe
   await obtenerCategoria({ tenantId, categoriaId });
 
-  // Construir SET dinámico
+  if (datos.parent_id !== undefined) {
+    if (datos.parent_id === categoriaId) {
+      throw { status: 400, mensaje: 'Una categoría no puede ser padre de sí misma.' };
+    }
+    if (datos.parent_id) {
+      await validarCategoriaPadre({ tenantId, parentId: datos.parent_id });
+    }
+  }
+
   const campos  = [];
   const valores = [];
   let idx = 1;
 
   if (datos.nombre      !== undefined) { campos.push(`nombre = $${idx++}`);      valores.push(datos.nombre); }
   if (datos.descripcion !== undefined) { campos.push(`descripcion = $${idx++}`); valores.push(datos.descripcion); }
+  if (datos.parent_id   !== undefined) { campos.push(`parent_id = $${idx++}`);   valores.push(datos.parent_id); }
   if (datos.orden       !== undefined) { campos.push(`orden = $${idx++}`);       valores.push(datos.orden); }
   if (datos.color       !== undefined) { campos.push(`color = $${idx++}`);       valores.push(datos.color); }
   if (datos.activo      !== undefined) { campos.push(`activo = $${idx++}`);      valores.push(datos.activo); }
@@ -87,7 +174,7 @@ const actualizarCategoria = async ({ tenantId, categoriaId, datos }) => {
   const { rows } = await query(
     `UPDATE categorias SET ${campos.join(', ')}
      WHERE id = $${idx++} AND tenant_id = $${idx}
-     RETURNING id, nombre, descripcion, orden, color, activo`,
+     RETURNING id, parent_id, nombre, descripcion, orden, color, activo`,
     valores
   );
 
@@ -97,10 +184,15 @@ const actualizarCategoria = async ({ tenantId, categoriaId, datos }) => {
 
 /**
  * Desactivar una categoría (soft delete)
- * No elimina de la BD para mantener historial de ventas
+ * No se puede desactivar si tiene hijos activos
  */
 const desactivarCategoria = async ({ tenantId, categoriaId }) => {
   await obtenerCategoria({ tenantId, categoriaId });
+
+  const esHoja = await esCategoriaHoja({ tenantId, categoriaId });
+  if (!esHoja) {
+    throw { status: 400, mensaje: 'No se puede desactivar una categoría que tiene subcategorías. Desactive o reasigne las subcategorías primero.' };
+  }
 
   await query(
     'UPDATE categorias SET activo = FALSE WHERE id = $1 AND tenant_id = $2',
@@ -229,9 +321,13 @@ const crearProducto = async ({ tenantId, datos }) => {
     codigo, orden,
   } = datos;
 
-  // Si tiene categoría, verificar que pertenece al tenant
+  // Si tiene categoría, verificar que es hoja y pertenece al tenant
   if (categoria_id) {
     await obtenerCategoria({ tenantId, categoriaId: categoria_id });
+    const esHoja = await esCategoriaHoja({ tenantId, categoriaId: categoria_id });
+    if (!esHoja) {
+      throw { status: 400, mensaje: 'Solo se pueden asignar productos a categorías hoja (sin subcategorías).' };
+    }
   }
 
   const { rows } = await query(
@@ -269,9 +365,13 @@ const crearProducto = async ({ tenantId, datos }) => {
 const actualizarProducto = async ({ tenantId, productoId, datos }) => {
   await obtenerProducto({ tenantId, productoId });
 
-  // Si cambia la categoría, verificar que existe en el tenant
+  // Si cambia la categoría, verificar que es hoja y pertenece al tenant
   if (datos.categoria_id) {
     await obtenerCategoria({ tenantId, categoriaId: datos.categoria_id });
+    const esHoja = await esCategoriaHoja({ tenantId, categoriaId: datos.categoria_id });
+    if (!esHoja) {
+      throw { status: 400, mensaje: 'Solo se pueden asignar productos a categorías hoja (sin subcategorías).' };
+    }
   }
 
   // Construir SET dinámico — solo campos enviados
@@ -399,13 +499,57 @@ const productosStockBajo = async ({ tenantId }) => {
   return rows;
 };
 
+/**
+ * Subir imagen a R2 y actualizar imagen_url del producto
+ */
+const subirImagenProducto = async ({ tenantId, productoId, buffer, mimetype }) => {
+  await obtenerProducto({ tenantId, productoId });
+
+  const imagenUrl = await subirImagen({ tenantId, productoId, buffer, mimetype });
+
+  const { rows } = await query(
+    `UPDATE productos SET imagen_url = $1
+     WHERE id = $2 AND tenant_id = $3
+     RETURNING id, nombre, imagen_url`,
+    [imagenUrl, productoId, tenantId]
+  );
+
+  logger.info('Imagen asignada a producto', { producto_id: productoId, tenant_id: tenantId });
+  return rows[0];
+};
+
+/**
+ * Eliminar imagen de R2 y limpiar imagen_url del producto
+ */
+const eliminarImagenProducto = async ({ tenantId, productoId }) => {
+  const producto = await obtenerProducto({ tenantId, productoId });
+
+  if (!producto.imagen_url) {
+    throw { status: 404, mensaje: 'El producto no tiene imagen asignada.' };
+  }
+
+  await eliminarImagen({ tenantId, productoId });
+
+  const { rows } = await query(
+    `UPDATE productos SET imagen_url = NULL
+     WHERE id = $1 AND tenant_id = $2
+     RETURNING id, nombre, imagen_url`,
+    [productoId, tenantId]
+  );
+
+  logger.info('Imagen eliminada de producto', { producto_id: productoId, tenant_id: tenantId });
+  return rows[0];
+};
+
 module.exports = {
   // Categorías
   listarCategorias,
+  listarArbolCategorias,
   obtenerCategoria,
   crearCategoria,
   actualizarCategoria,
   desactivarCategoria,
+  esCategoriaHoja,
   // Productos
   listarProductos,
   obtenerProducto,
@@ -415,4 +559,7 @@ module.exports = {
   desactivarProducto,
   ajustarStock,
   productosStockBajo,
+  // Imágenes
+  subirImagenProducto,
+  eliminarImagenProducto,
 };

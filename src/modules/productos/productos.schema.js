@@ -17,6 +17,9 @@ const crearCategoriaSchema = Joi.object({
     'any.required': 'El nombre de la categoría es requerido.',
   }),
   descripcion: Joi.string().max(255).optional().allow('', null),
+  parent_id: Joi.string().uuid().optional().allow(null).messages({
+    'string.uuid': 'El ID de categoría padre no es válido.',
+  }),
   orden: Joi.number().integer().min(0).optional().default(0),
   color: Joi.string()
     .pattern(/^#[0-9A-Fa-f]{6}$/)
@@ -34,6 +37,7 @@ const crearCategoriaSchema = Joi.object({
 const actualizarCategoriaSchema = Joi.object({
   nombre:      Joi.string().min(2).max(100).optional(),
   descripcion: Joi.string().max(255).optional().allow('', null),
+  parent_id:   Joi.string().uuid().optional().allow(null),
   orden:       Joi.number().integer().min(0).optional(),
   color:       Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional().allow('', null),
   activo:      Joi.boolean().optional(),

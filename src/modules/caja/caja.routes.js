@@ -21,6 +21,8 @@ router.get('/caja/historial', requierePermiso('caja.historial'), controller.getH
 router.get('/caja/activa', controller.getCajaActiva);
 router.post('/caja/abrir', requierePermiso('caja.abrir'), controller.abrirCaja);
 router.post('/caja/cerrar', requiereCajaAbierta, requierePermiso('caja.cerrar'), controller.cerrarCaja);
+router.post('/caja/verificar-cuadre', requiereCajaAbierta, requierePermiso('caja.cerrar'), controller.verificarCuadre);
+router.get('/caja/cuadre/:id', requierePermiso('caja.cuadre'), controller.obtenerCuadre);
 router.post('/caja/movimiento', requiereCajaAbierta, requierePermiso('caja.movimientos'), controller.registrarMovimiento);
 router.get('/caja/resumen-diario', requierePermiso('caja.movimientos'), controller.getResumenDiario);
 router.get('/caja/:id/movimientos', requierePermiso('caja.movimientos'), controller.getMovimientos);

@@ -38,13 +38,21 @@ const recalcularOrden = async (client, ordenId, tenantId) => {
   );
 
   const { rows: ordenRows } = await client.query(
-    'SELECT porcentaje_descuento FROM ordenes WHERE id = $1 AND tenant_id = $2',
+    'SELECT porcentaje_descuento, propina_porcentaje, propina_monto FROM ordenes WHERE id = $1 AND tenant_id = $2',
     [ordenId, tenantId]
   );
 
-  const subtotalBase       = Number(itemsRows[0].subtotal);
+  const subtotalBase        = Number(itemsRows[0].subtotal);
   const porcentajeDescuento = Number(ordenRows[0].porcentaje_descuento);
-  const totales            = calcularTotales(subtotalBase, porcentajeDescuento);
+  const totales             = calcularTotales(subtotalBase, porcentajeDescuento);
+
+  // Recalcular propina solo si hay porcentaje definido (modo porcentual)
+  // Si porcentaje es 0, se respeta el monto fijo existente (ej: propina manual)
+  const propinaPorcentaje = Number(ordenRows[0].propina_porcentaje || 0);
+  let propinaMonto = Number(ordenRows[0].propina_monto || 0);
+  if (propinaPorcentaje > 0) {
+    propinaMonto = Number((totales.total * propinaPorcentaje / 100).toFixed(2));
+  }
 
   await client.query(
     `UPDATE ordenes SET
@@ -52,12 +60,13 @@ const recalcularOrden = async (client, ordenId, tenantId) => {
        descuento = $2,
        total     = $3,
        gravado   = $4,
-       iva       = $5
-     WHERE id = $6 AND tenant_id = $7`,
-    [totales.subtotal, totales.descuento, totales.total, totales.gravado, totales.iva, ordenId, tenantId]
+       iva       = $5,
+       propina_monto = $6
+     WHERE id = $7 AND tenant_id = $8`,
+    [totales.subtotal, totales.descuento, totales.total, totales.gravado, totales.iva, propinaMonto, ordenId, tenantId]
   );
 
-  return totales;
+  return { ...totales, propina_monto: propinaMonto };
 };
 
 /**
@@ -217,9 +226,10 @@ const listarOrdenes = async ({ tenantId, filtros = {} }) => {
   const { rows } = await query(
     `SELECT
        o.id, o.tipo, o.estado, o.numero_orden, o.origen, o.numero_externo,
-       o.subtotal, o.porcentaje_descuento, o.descuento,
-       o.total, o.gravado, o.iva, o.notas,
-      o.mesa_id, o.cliente_id, o.usuario_id,
+        o.subtotal, o.porcentaje_descuento, o.descuento,
+        o.total, o.gravado, o.iva, o.notas,
+        o.propina_porcentaje, o.propina_monto,
+       o.mesa_id, o.cliente_id, o.usuario_id,
         o.creado_en, o.actualizado_en,
         m.numero AS mesa_numero, m.zona,
         CONCAT_WS(' ', c.nombre, c.apellido) AS cliente_nombre,
@@ -260,6 +270,7 @@ const obtenerOrden = async ({ tenantId, ordenId }) => {
        o.id, o.tipo, o.estado, o.numero_orden, o.origen, o.numero_externo,
         o.subtotal, o.porcentaje_descuento, o.descuento,
         o.total, o.gravado, o.iva, o.notas,
+        o.propina_porcentaje, o.propina_monto,
         o.mesa_id, o.cliente_id, o.usuario_id,
         o.creado_en, o.actualizado_en, o.cerrado_en,
         m.numero AS mesa_numero, m.zona,
@@ -306,7 +317,7 @@ const obtenerOrden = async ({ tenantId, ordenId }) => {
 };
 
 const crearOrden = async ({ tenantId, usuarioId, datos }) => {
-  const { tipo, mesa_id, cliente_id, notas, porcentaje_descuento = 0 } = datos;
+  const { tipo, mesa_id, cliente_id, notas, porcentaje_descuento = 0, propina_porcentaje = 10 } = datos;
 
   // Si es orden de mesa, verificar que la mesa esté disponible
   if (tipo === 'mesa' && mesa_id) {
@@ -326,11 +337,12 @@ const crearOrden = async ({ tenantId, usuarioId, datos }) => {
     // Crear la orden
     const { rows } = await client.query(
       `INSERT INTO ordenes
-         (tenant_id, tipo, mesa_id, cliente_id, usuario_id, notas, porcentaje_descuento, origen, numero_externo)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         (tenant_id, tipo, mesa_id, cliente_id, usuario_id, notas, porcentaje_descuento, propina_porcentaje, origen, numero_externo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING
          id, tipo, estado, numero_orden, origen, numero_externo,
          subtotal, descuento, total, gravado, iva,
+         propina_porcentaje, propina_monto,
          mesa_id, cliente_id, usuario_id, notas,
          porcentaje_descuento, creado_en`,
       [
@@ -341,6 +353,7 @@ const crearOrden = async ({ tenantId, usuarioId, datos }) => {
         usuarioId,
         notas          || null,
         porcentaje_descuento,
+        propina_porcentaje,
         datos.origen   || 'pos',
         datos.numero_externo || null,
       ]
@@ -475,6 +488,14 @@ const actualizarOrden = async ({ tenantId, ordenId, datos }) => {
       campos.push(`porcentaje_descuento = $${idx++}`);
       valores.push(datos.porcentaje_descuento);
     }
+    if (datos.propina_porcentaje !== undefined) {
+      campos.push(`propina_porcentaje = $${idx++}`);
+      valores.push(datos.propina_porcentaje);
+    }
+    if (datos.propina_monto !== undefined) {
+      campos.push(`propina_monto = $${idx++}`);
+      valores.push(datos.propina_monto);
+    }
 
     if (campos.length > 0) {
       valores.push(ordenId, tenantId);
@@ -495,6 +516,59 @@ const actualizarOrden = async ({ tenantId, ordenId, datos }) => {
   } finally {
     client.release();
   }
+};
+
+// ═════════════════════════════════════════════
+// PROPINA
+// ═════════════════════════════════════════════
+
+/**
+ * PATCH /ordenes/:id/propina
+ * Actualiza el porcentaje y/o monto de propina de una orden
+ * Si porcentaje > 0, recalcula el monto automáticamente sobre el total actual
+ * Si porcentaje = 0, guarda el monto tal cual (permite propina fija manual)
+ */
+const actualizarPropina = async ({ tenantId, ordenId, datos }) => {
+  const orden = await obtenerOrden({ tenantId, ordenId });
+
+  if (ESTADOS_FINALES.includes(orden.estado)) {
+    throw { status: 400, mensaje: `No se puede modificar la propina de una orden "${orden.estado}".` };
+  }
+
+  const { porcentaje, monto = 0 } = datos;
+
+  if (porcentaje > 0) {
+    // Modo porcentual: guardar porcentaje y recalcular monto vía recalcularOrden
+    await query(
+      'UPDATE ordenes SET propina_porcentaje = $1 WHERE id = $2 AND tenant_id = $3',
+      [porcentaje, ordenId, tenantId]
+    );
+
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      const totales = await recalcularOrden(client, ordenId, tenantId);
+      await client.query('COMMIT');
+
+      return {
+        propina_porcentaje: porcentaje,
+        propina_monto: totales.propina_monto,
+      };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Modo fijo o sin propina: guardar monto tal cual
+  await query(
+    'UPDATE ordenes SET propina_porcentaje = 0, propina_monto = $1 WHERE id = $2 AND tenant_id = $3',
+    [monto, ordenId, tenantId]
+  );
+
+  return { propina_porcentaje: 0, propina_monto: monto };
 };
 
 // ═════════════════════════════════════════════
@@ -1062,17 +1136,18 @@ const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }) => {
 
   const { metodo, monto_efectivo = 0, monto_tarjeta = 0, referencia_tarjeta } = datos;
 
-  // Validar que el total pagado cubra el total de la orden
+  // Validar que el total pagado cubra el total de la orden + propina
+  const montoAPagar = Number((orden.total + (orden.propina_monto || 0)).toFixed(2));
   const totalPagado = Number((monto_efectivo + monto_tarjeta).toFixed(2));
 
-  if (totalPagado < orden.total) {
+  if (totalPagado < montoAPagar) {
     throw {
       status: 400,
-      mensaje: `El monto pagado ($${totalPagado}) es menor al total de la orden ($${orden.total}).`,
+      mensaje: `El monto pagado ($${totalPagado}) es menor al total a pagar con propina ($${montoAPagar}).`,
     };
   }
 
-  const vuelto = Number((totalPagado - orden.total).toFixed(2));
+  const vuelto = Number((totalPagado - montoAPagar).toFixed(2));
 
   const client = await getClient();
   try {
@@ -1161,4 +1236,6 @@ module.exports = {
   cambiarMesa,
   // Pagos
   registrarPago,
+  // Propina
+  actualizarPropina,
 };

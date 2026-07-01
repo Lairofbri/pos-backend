@@ -131,17 +131,16 @@ const loginEmail = async ({ email, password, tenantId, ip }) => {
 // El tenant_id viene del header X-Tenant-Id (middleware)
 // ─────────────────────────────────────────────
 const loginPin = async ({ tenantId, usuarioId, pin, ip }) => {
-  // Buscar usuario dentro del tenant
   const { rows } = await query(
     `SELECT u.*, t.activo as tenant_activo
      FROM usuarios u
      JOIN tenants t ON t.id = u.tenant_id
-     WHERE u.id = $1 AND u.tenant_id = $2`,
+     WHERE u.id = $1 AND u.tenant_id = $2 AND u.activo = TRUE`,
     [usuarioId, tenantId]
   );
 
   if (rows.length === 0) {
-    throw { status: 401, mensaje: 'Usuario no encontrado en este restaurante.' };
+    throw { status: 401, mensaje: 'Credenciales incorrectas.' };
   }
 
   const usuario = rows[0];
@@ -150,8 +149,14 @@ const loginPin = async ({ tenantId, usuarioId, pin, ip }) => {
     throw { status: 403, mensaje: 'La cuenta del restaurante está inactiva.' };
   }
 
-  if (!usuario.activo) {
-    throw { status: 403, mensaje: 'Este usuario está desactivado.' };
+  // Si el bloqueo expiró, resetear contador
+  if (usuario.bloqueado_hasta && new Date() >= new Date(usuario.bloqueado_hasta)) {
+    await query(
+      'UPDATE usuarios SET intentos_pin = 0, bloqueado_hasta = NULL WHERE id = $1 AND tenant_id = $2',
+      [usuarioId, tenantId]
+    );
+    usuario.intentos_pin = 0;
+    usuario.bloqueado_hasta = null;
   }
 
   // Verificar si está bloqueado temporalmente
@@ -165,26 +170,35 @@ const loginPin = async ({ tenantId, usuarioId, pin, ip }) => {
     };
   }
 
+  if (!usuario.pin_hash) {
+    throw { status: 401, mensaje: 'Credenciales incorrectas.' };
+  }
+
   // Verificar PIN
   const pinValido = await bcrypt.compare(String(pin), usuario.pin_hash);
 
   if (!pinValido) {
-    // Incrementar contador de intentos fallidos
-    const nuevosIntentos = (usuario.intentos_pin || 0) + 1;
-    let bloqueadoHasta = null;
+    // Incremento atómico del contador de intentos fallidos
+    const { rows: actualizados } = await query(
+      `UPDATE usuarios
+       SET intentos_pin = intentos_pin + 1,
+           bloqueado_hasta = CASE
+             WHEN intentos_pin + 1 >= $1 THEN NOW() + $2::interval
+             ELSE NULL
+           END
+       WHERE id = $3 AND tenant_id = $4
+       RETURNING intentos_pin, bloqueado_hasta`,
+      [MAX_INTENTOS_PIN, `${MINUTOS_BLOQUEO} minutes`, usuarioId, tenantId]
+    );
+
+    const nuevosIntentos = actualizados[0].intentos_pin;
 
     if (nuevosIntentos >= MAX_INTENTOS_PIN) {
-      bloqueadoHasta = new Date(Date.now() + MINUTOS_BLOQUEO * 60 * 1000);
       logger.warn('Usuario bloqueado por intentos fallidos de PIN', {
         usuario_id: usuarioId,
         tenant_id: tenantId,
       });
     }
-
-    await query(
-      'UPDATE usuarios SET intentos_pin = $1, bloqueado_hasta = $2 WHERE id = $3 AND tenant_id = $4',
-      [nuevosIntentos, bloqueadoHasta, usuarioId, tenantId]
-    );
 
     const intentosRestantes = MAX_INTENTOS_PIN - nuevosIntentos;
     throw {

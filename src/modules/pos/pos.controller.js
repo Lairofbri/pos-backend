@@ -11,6 +11,7 @@ const {
   cambiarEstadoSchema,
   agregarItemSchema,
   actualizarItemSchema,
+  actualizarPropinaSchema,
   registrarPagoSchema,
   filtrosOrdenesSchema,
   splitOrdenSchema,
@@ -224,6 +225,30 @@ const actualizarOrden = async (req, res) => {
       datos:    value,
     });
     return exito(res, totales, 'Orden actualizada exitosamente.');
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
+/**
+ * PATCH /api/ordenes/:id/propina
+ * Fix CUBIC: valida UUID antes de actualizar propina
+ */
+const actualizarPropina = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de orden no tiene un formato UUID válido.', 400);
+  }
+
+  const { error: validacionError, value } = actualizarPropinaSchema.validate(req.body);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
+  try {
+    const resultado = await service.actualizarPropina({
+      tenantId: req.usuario.tenant_id,
+      ordenId:  req.params.id,
+      datos:    value,
+    });
+    return exito(res, resultado, 'Propina actualizada exitosamente.');
   } catch (err) {
     return manejarError(res, err);
   }
@@ -471,4 +496,5 @@ module.exports = {
   transferirItems,
   cambiarMesa,
   registrarPago,
+  actualizarPropina,
 };

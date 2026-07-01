@@ -15,7 +15,7 @@ const logger = require('../utils/logger');
 const TENANT_ID    = 'a0000000-0000-0000-0000-000000000001';
 const SUCURSAL_ID  = 'b0000000-0000-0000-0000-000000000001';
 const ADMIN_EMAIL  = 'admin@demo.pos';
-const ADMIN_PIN    = '1234';          // PIN rápido para estación
+const ADMIN_PIN    = '123456';        // PIN rápido para estación
 const ADMIN_PASS   = 'Admin123!';    // Password para panel web
 
 /**
