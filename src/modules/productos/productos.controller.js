@@ -19,6 +19,7 @@ const {
 } = require('../../utils/response');
 const { esUuidValido } = require('../../middlewares/uuid.middleware');
 const logger = require('../../utils/logger');
+const multer = require('multer');
 
 // ─────────────────────────────────────────────
 // Helper: manejo de errores del service
@@ -40,12 +41,22 @@ const manejarError = (res, err) => {
 
 /**
  * GET /api/categorias
- * Fix CUBIC: solo admin puede ver inactivas — verificado en código, no solo en comentario
+ * ?arbol=true  → devuelve árbol jerárquico con hijos anidados
+ * ?todas=true  → incluye categorías inactivas (solo admin)
  */
 const listarCategorias = async (req, res) => {
   try {
     const esAdmin     = req.usuario.rol === 'administrador';
     const soloActivas = !esAdmin || req.query.todas !== 'true';
+    const esArbol     = req.query.arbol === 'true';
+
+    if (esArbol) {
+      const categorias = await service.listarArbolCategorias({
+        tenantId: req.usuario.tenant_id,
+        soloActivas,
+      });
+      return exito(res, { categorias });
+    }
 
     const categorias = await service.listarCategorias({
       tenantId: req.usuario.tenant_id,
@@ -325,6 +336,68 @@ const ajustarStock = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// Multer setup: memoria, no disco
+// ─────────────────────────────────────────────
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const permitidos = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!permitidos.includes(file.mimetype)) {
+      return cb(new Error('Formato de imagen no permitido. Solo JPEG, PNG y WebP.'), false);
+    }
+    cb(null, true);
+  },
+});
+
+/**
+ * POST /api/productos/:id/imagen
+ * Subir o reemplazar imagen de un producto
+ */
+const subirImagen = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de producto no tiene un formato UUID válido.', 400);
+  }
+
+  if (!req.file) {
+    return error(res, 'Debe enviar una imagen en el campo "imagen".', 400);
+  }
+
+  try {
+    const producto = await service.subirImagenProducto({
+      tenantId: req.usuario.tenant_id,
+      productoId: req.params.id,
+      buffer: req.file.buffer,
+      mimetype: req.file.mimetype,
+    });
+    return exito(res, { producto }, 'Imagen subida exitosamente.');
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
+/**
+ * DELETE /api/productos/:id/imagen
+ * Eliminar imagen de un producto
+ */
+const eliminarImagen = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de producto no tiene un formato UUID válido.', 400);
+  }
+
+  try {
+    const producto = await service.eliminarImagenProducto({
+      tenantId: req.usuario.tenant_id,
+      productoId: req.params.id,
+    });
+    return exito(res, { producto }, 'Imagen eliminada exitosamente.');
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
 module.exports = {
   listarCategorias,
   obtenerCategoria,
@@ -339,4 +412,7 @@ module.exports = {
   toggleProducto,
   desactivarProducto,
   ajustarStock,
+  subirImagen,
+  eliminarImagen,
+  upload,
 };

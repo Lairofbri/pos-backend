@@ -9,6 +9,8 @@ const {
   movimientoSchema,
   filtrosCajaSchema,
   resumenDiarioSchema,
+  verificarCuadreSchema,
+  cuadreSchema,
 } = require('./caja.schema');
 const {
   exito,
@@ -96,6 +98,51 @@ const cerrarCaja = async (req, res) => {
       datos:     value,
     });
     return exito(res, { caja }, 'Caja cerrada exitosamente.');
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
+/**
+ * POST /api/caja/verificar-cuadre
+ * Cashier checks if entered amount matches expected total
+ * Response does NOT include any amounts — just boolean + message
+ */
+const verificarCuadre = async (req, res) => {
+  const { error: validacionError, value } = verificarCuadreSchema.validate(req.body);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
+  if (value.sucursal_id && !esUuidValido(value.sucursal_id)) {
+    return error(res, 'El campo sucursal_id no tiene un formato UUID válido.', 400);
+  }
+
+  try {
+    const resultado = await service.verificarCuadre({
+      tenantId: req.usuario.tenant_id,
+      datos:    value,
+    });
+    return exito(res, resultado);
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
+/**
+ * GET /api/caja/cuadre/:id
+ * Supervisor views full reconciliation details
+ * Requires caja.cuadre permission (admin/gerente only)
+ */
+const obtenerCuadre = async (req, res) => {
+  if (!esUuidValido(req.params.id)) {
+    return error(res, 'El ID de caja no tiene un formato UUID válido.', 400);
+  }
+
+  try {
+    const cuadre = await service.obtenerCuadre({
+      tenantId: req.usuario.tenant_id,
+      cajaId:   req.params.id,
+    });
+    return exito(res, { cuadre });
   } catch (err) {
     return manejarError(res, err);
   }
@@ -218,6 +265,8 @@ module.exports = {
   abrirCaja,
   getCajaActiva,
   cerrarCaja,
+  verificarCuadre,
+  obtenerCuadre,
   registrarMovimiento,
   getMovimientos,
   getHistorialCajas,

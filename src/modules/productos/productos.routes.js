@@ -37,4 +37,8 @@ router.patch('/productos/:id/toggle', requierePermiso('productos.desactivar'), c
 router.patch('/productos/:id/stock', requierePermiso('productos.stock'), controller.ajustarStock);
 router.delete('/productos/:id', requierePermiso('productos.desactivar'), controller.desactivarProducto);
 
+// Imágenes
+router.post('/productos/:id/imagen', requierePermiso('productos.editar'), controller.upload.single('imagen'), controller.subirImagen);
+router.delete('/productos/:id/imagen', requierePermiso('productos.editar'), controller.eliminarImagen);
+
 module.exports = router;

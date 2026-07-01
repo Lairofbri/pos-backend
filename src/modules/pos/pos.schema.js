@@ -63,6 +63,7 @@ const crearOrdenSchema = Joi.object({
     'number.min': 'El descuento no puede ser negativo.',
     'number.max': 'El descuento no puede superar el 100%.',
   }),
+  propina_porcentaje:   Joi.number().min(0).max(100).precision(2).optional().default(10),
   // ── Módulo 6: Canal de origen del pedido ──
   // Permite identificar si viene de Hugo, PedidosYa, WhatsApp, etc.
   // Por defecto 'pos' para ventas directas en el restaurante
@@ -83,6 +84,8 @@ const actualizarOrdenSchema = Joi.object({
     'number.min': 'El descuento no puede ser negativo.',
     'number.max': 'El descuento no puede superar el 100%.',
   }),
+  propina_porcentaje:   Joi.number().min(0).max(100).precision(2).optional(),
+  propina_monto:        Joi.number().min(0).precision(2).optional(),
   origen:         Joi.string()
     .valid('pos', 'hugo', 'pedidosya', 'ubereats', 'whatsapp', 'telefono', 'otro')
     .optional(),
@@ -179,6 +182,21 @@ const transferirItemsSchema = Joi.object({
 });
 
 // ─────────────────────────────────────────────
+// PROPINA
+// ─────────────────────────────────────────────
+
+const actualizarPropinaSchema = Joi.object({
+  porcentaje: Joi.number().min(0).max(100).precision(2).required().messages({
+    'number.min': 'El porcentaje de propina no puede ser negativo.',
+    'number.max': 'El porcentaje de propina no puede superar el 100%.',
+    'any.required': 'El porcentaje de propina es requerido.',
+  }),
+  monto: Joi.number().min(0).precision(2).optional().default(0).messages({
+    'number.min': 'El monto de propina no puede ser negativo.',
+  }),
+});
+
+// ─────────────────────────────────────────────
 // PAGOS
 // ─────────────────────────────────────────────
 
@@ -237,6 +255,7 @@ module.exports = {
   cambiarEstadoSchema,
   agregarItemSchema,
   actualizarItemSchema,
+  actualizarPropinaSchema,
   registrarPagoSchema,
   filtrosOrdenesSchema,
   splitOrdenSchema,

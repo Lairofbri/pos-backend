@@ -31,6 +31,7 @@ router.get('/ordenes/:id', requierePermiso('ordenes.ver'), controller.obtenerOrd
 router.post('/ordenes', requiereCajaAbierta, requierePermiso('ordenes.crear'), controller.crearOrden);
 router.patch('/ordenes/:id', requiereCajaAbierta, requierePermiso('ordenes.actualizar'), controller.actualizarOrden);
 router.patch('/ordenes/:id/estado', requiereCajaAbierta, requierePermiso('ordenes.actualizar'), controller.cambiarEstadoOrden);
+router.patch('/ordenes/:id/propina', requiereCajaAbierta, requierePermiso('ordenes.actualizar'), controller.actualizarPropina);
 
 // ─────────────────────────────────────────────
 // ITEMS DE ORDEN

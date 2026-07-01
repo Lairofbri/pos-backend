@@ -199,10 +199,8 @@ const cerrarCaja = async ({ tenantId, usuarioId, datos }) => {
          fecha_cierre      = NOW()
        WHERE id = $5
        RETURNING
-         id, estado, monto_inicial, total_esperado,
-         monto_final, diferencia,
-         total_ventas, total_efectivo, total_tarjeta,
-         total_retiros, total_depositos,
+         id, estado, monto_inicial,
+         monto_final,
          notas_cierre, fecha_apertura, fecha_cierre`,
       [monto_final, diferencia, notas_cierre || null, usuarioId, caja.id]
     );
@@ -218,6 +216,23 @@ const cerrarCaja = async ({ tenantId, usuarioId, datos }) => {
       diferencia,
     });
 
+    if (diferencia !== 0) {
+      const tipoEvento = diferencia > 0 ? 'sobrante' : 'faltante';
+      try {
+        await query(
+          `INSERT INTO bitacora_caja
+             (tenant_id, caja_id, tipo_evento, total_esperado, monto_final, diferencia, usuario_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [tenantId, caja.id, tipoEvento, caja.total_esperado, monto_final, diferencia, usuarioId]
+        );
+      } catch (errBitacora) {
+        logger.error('Error al registrar en bitacora_caja', {
+          error: errBitacora.message,
+          caja_id: caja.id,
+        });
+      }
+    }
+
     return rows[0];
   } catch (err) {
     await client.query('ROLLBACK');
@@ -225,6 +240,96 @@ const cerrarCaja = async ({ tenantId, usuarioId, datos }) => {
   } finally {
     client.release();
   }
+};
+
+/**
+ * Verificar si el monto ingresado cuadra con el esperado
+ * NO devuelve montos — solo indica si hay diferencia
+ * El cajero puede llamarlo antes de cerrar para saber si necesita supervisor
+ */
+const verificarCuadre = async ({ tenantId, datos }) => {
+  const { monto_final, sucursal_id } = datos;
+  const caja = await obtenerCajaAbierta({ tenantId, sucursalId: sucursal_id });
+
+  if (!caja) {
+    throw { status: 404, mensaje: 'No hay ninguna caja abierta.' };
+  }
+
+  const diferencia = Number((monto_final - caja.total_esperado).toFixed(2));
+
+  return {
+    cuadra: diferencia === 0,
+    mensaje: diferencia === 0
+      ? 'El monto ingresado coincide con el esperado.'
+      : 'El monto no coincide. Solicite revisión de un superior.',
+  };
+};
+
+/**
+ * Obtener el cuadre detallado de una caja ya cerrada (o activa)
+ * Solo accesible con permiso caja.cuadre (admin/gerente)
+ * Devuelve total_esperado, diferencia, desglose completo
+ */
+const obtenerCuadre = async ({ tenantId, cajaId }) => {
+  const { rows } = await query(
+    `SELECT
+       c.id, c.estado, c.sucursal_id,
+       c.monto_inicial, c.total_esperado, c.monto_final, c.diferencia,
+       c.total_ventas, c.total_efectivo, c.total_tarjeta,
+       c.total_retiros, c.total_depositos,
+       c.notas_cierre,
+       c.fecha_apertura, c.fecha_cierre,
+       ua.nombre AS usuario_apertura,
+       uc.nombre AS usuario_cierre
+     FROM cajas c
+     JOIN usuarios ua ON ua.id = c.usuario_apertura_id
+     LEFT JOIN usuarios uc ON uc.id = c.usuario_cierre_id
+     WHERE c.id = $1 AND c.tenant_id = $2`,
+    [cajaId, tenantId]
+  );
+
+  if (rows.length === 0) {
+    throw { status: 404, mensaje: 'Caja no encontrada.' };
+  }
+
+  const caja = rows[0];
+
+  const { rows: metodos } = await query(
+    `SELECT
+       p.metodo,
+       COUNT(DISTINCT p.orden_id)::int AS cantidad_ordenes,
+       SUM(p.total_pagado) AS total
+     FROM pagos p
+     WHERE p.tenant_id = $1
+       AND p.creado_en >= $2
+       AND ($3::timestamptz IS NULL OR p.creado_en <= $3)
+     GROUP BY p.metodo
+     ORDER BY p.metodo`,
+    [tenantId, caja.fecha_apertura, caja.fecha_cierre]
+  );
+
+  const { rows: movimientos } = await query(
+    `SELECT
+       m.id, m.tipo, m.monto, m.motivo,
+       m.metodo_pago, m.orden_id, m.creado_en,
+       u.nombre AS usuario_nombre
+     FROM movimientos_caja m
+     JOIN usuarios u ON u.id = m.usuario_id
+     WHERE m.caja_id = $1 AND m.tenant_id = $2
+     ORDER BY m.creado_en DESC
+     LIMIT 50`,
+    [cajaId, tenantId]
+  );
+
+  return {
+    ...caja,
+    metodos: metodos.map(m => ({
+      metodo: m.metodo,
+      cantidad_ordenes: m.cantidad_ordenes,
+      total: String(Number(m.total).toFixed(2)),
+    })),
+    movimientos,
+  };
 };
 
 /**
@@ -347,9 +452,7 @@ const getHistorialCajas = async ({ tenantId, filtros = {} }) => {
   const { rows } = await query(
     `SELECT
        c.id, c.estado,
-       c.monto_inicial, c.total_esperado, c.monto_final, c.diferencia,
-       c.total_ventas, c.total_efectivo, c.total_tarjeta,
-       c.total_retiros, c.total_depositos,
+       c.monto_inicial, c.monto_final,
        c.fecha_apertura, c.fecha_cierre,
        ua.nombre AS usuario_apertura,
        uc.nombre AS usuario_cierre
@@ -361,40 +464,6 @@ const getHistorialCajas = async ({ tenantId, filtros = {} }) => {
      LIMIT $${idx++} OFFSET $${idx}`,
     [...valores, limite, offset]
   );
-
-  // Obtener desglose por método de pago para las cajas de esta página
-  if (rows.length > 0) {
-    const cajaIds = rows.map(r => r.id);
-    const { rows: metodosRows } = await query(
-      `SELECT
-         c.id AS caja_id,
-         p.metodo,
-         COUNT(DISTINCT p.orden_id)::int AS cantidad_ordenes,
-         SUM(p.total_pagado) AS total
-       FROM cajas c
-       JOIN pagos p ON p.tenant_id = c.tenant_id
-         AND p.creado_en >= c.fecha_apertura
-         AND (c.fecha_cierre IS NULL OR p.creado_en <= c.fecha_cierre)
-       WHERE c.id = ANY($1::uuid[])
-       GROUP BY c.id, p.metodo
-       ORDER BY c.id, p.metodo`,
-      [cajaIds]
-    );
-
-    const metodosPorCaja = {};
-    for (const mr of metodosRows) {
-      if (!metodosPorCaja[mr.caja_id]) metodosPorCaja[mr.caja_id] = [];
-      metodosPorCaja[mr.caja_id].push({
-        metodo: mr.metodo,
-        cantidad_ordenes: mr.cantidad_ordenes,
-        total: String(Number(mr.total).toFixed(2)),
-      });
-    }
-
-    for (const caja of rows) {
-      caja.metodos = metodosPorCaja[caja.id] || [];
-    }
-  }
 
   const { rows: conteo } = await query(
     `SELECT COUNT(*) as total FROM cajas c WHERE ${condiciones.join(' AND ')}`,
@@ -477,6 +546,8 @@ module.exports = {
   abrirCaja,
   getCajaActiva,
   cerrarCaja,
+  verificarCuadre,
+  obtenerCuadre,
   registrarMovimiento,
   registrarIngresoPago,
   getMovimientos,

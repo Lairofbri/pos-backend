@@ -79,10 +79,36 @@ const resumenDiarioSchema = Joi.object({
   }),
 });
 
+/**
+ * Schema para verificar cuadre (antes de cerrar)
+ * Solo valida si el monto coincide sin revelar el esperado
+ */
+const verificarCuadreSchema = Joi.object({
+  monto_final: Joi.number().min(0).required().messages({
+    'number.min':   'El monto final no puede ser negativo.',
+    'any.required': 'El monto contado es requerido para verificar el cuadre.',
+  }),
+  sucursal_id: Joi.string().uuid().optional().allow(null).messages({
+    'string.uuid': 'El sucursal_id no tiene un formato UUID válido.',
+  }),
+});
+
+/**
+ * Schema para obtener cuadre detallado por ID de caja
+ */
+const cuadreSchema = Joi.object({
+  caja_id: Joi.string().uuid().required().messages({
+    'string.uuid':  'El ID de caja no tiene un formato UUID válido.',
+    'any.required': 'El ID de caja es requerido.',
+  }),
+});
+
 module.exports = {
   abrirCajaSchema,
   cerrarCajaSchema,
   movimientoSchema,
   filtrosCajaSchema,
   resumenDiarioSchema,
+  verificarCuadreSchema,
+  cuadreSchema,
 };
