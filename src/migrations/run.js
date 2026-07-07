@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { createHash } = require('crypto');
 const { query, verificarConexion } = require('../config/database');
 const logger = require('../utils/logger');
 
@@ -13,9 +14,15 @@ const CREAR_TABLA_MIGRACIONES = `
   CREATE TABLE IF NOT EXISTS _migraciones (
     id          SERIAL PRIMARY KEY,
     archivo     VARCHAR(255) UNIQUE NOT NULL,
+    hash        VARCHAR(64),
     ejecutado_en TIMESTAMPTZ DEFAULT NOW()
   );
 `;
+
+const hashFile = (ruta) => {
+  const contenido = fs.readFileSync(ruta, 'utf8');
+  return createHash('sha256').update(contenido).digest('hex');
+};
 
 const ejecutarMigraciones = async () => {
   logger.info('Iniciando proceso de migraciones...');
@@ -24,11 +31,16 @@ const ejecutarMigraciones = async () => {
   // Crear tabla de control si no existe
   await query(CREAR_TABLA_MIGRACIONES);
 
+  // Migrar tabla si existe sin columna hash
+  try {
+    await query('ALTER TABLE _migraciones ADD COLUMN IF NOT EXISTS hash VARCHAR(64)');
+  } catch { /* ignorar si ya existe */ }
+
   // Leer migraciones ya ejecutadas
   const { rows: ejecutadas } = await query(
-    'SELECT archivo FROM _migraciones ORDER BY id'
+    'SELECT archivo, hash FROM _migraciones ORDER BY id'
   );
-  const yaEjecutadas = new Set(ejecutadas.map((r) => r.archivo));
+  const mapaEjecutadas = new Map(ejecutadas.map((r) => [r.archivo, r.hash]));
 
   // Leer archivos .sql de la carpeta migrations/ en la raíz del proyecto
   const carpetaMigraciones = path.join(__dirname, '..', '..', 'migrations');
@@ -46,22 +58,36 @@ const ejecutarMigraciones = async () => {
   let ejecutadas_ahora = 0;
 
   for (const archivo of archivos) {
-    if (yaEjecutadas.has(archivo)) {
-      logger.debug(`Migración ya ejecutada, saltando: ${archivo}`);
-      continue;
+    const rutaCompleta = path.join(carpetaMigraciones, archivo);
+
+    // Calcular hash actual del archivo
+    const hashActual = hashFile(rutaCompleta);
+
+    // Verificar si ya se ejecutó y si el hash coincide
+    if (mapaEjecutadas.has(archivo)) {
+      const hashPrevio = mapaEjecutadas.get(archivo);
+      // Si no hay hash previo (migración anterior al tracking), no podemos detectar cambios
+      if (!hashPrevio) {
+        logger.debug(`Migración sin hash de referencia, saltando: ${archivo}`);
+        continue;
+      }
+      if (hashPrevio === hashActual) {
+        logger.debug(`Migración sin cambios, saltando: ${archivo}`);
+        continue;
+      }
+      logger.info(`Migración modificada, re-ejecutando: ${archivo}`);
+      await query('DELETE FROM _migraciones WHERE archivo = $1', [archivo]);
     }
 
-    const rutaCompleta = path.join(carpetaMigraciones, archivo);
     const sql = fs.readFileSync(rutaCompleta, 'utf8');
 
     logger.info(`Ejecutando migración: ${archivo}`);
 
     try {
-      // Ejecutar migración y registrarla — ambos en la misma query secuencial
       await query(sql);
       await query(
-        'INSERT INTO _migraciones (archivo) VALUES ($1)',
-        [archivo]
+        'INSERT INTO _migraciones (archivo, hash) VALUES ($1, $2)',
+        [archivo, hashActual]
       );
       logger.info(`Migración completada: ${archivo}`);
       ejecutadas_ahora++;

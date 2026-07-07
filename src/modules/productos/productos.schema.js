@@ -21,6 +21,9 @@ const crearCategoriaSchema = Joi.object({
     'string.uuid': 'El ID de categoría padre no es válido.',
   }),
   orden: Joi.number().integer().min(0).optional().default(0),
+  icono: Joi.string().max(10).optional().allow('', null).messages({
+    'string.max': 'El icono no debe exceder 10 caracteres.',
+  }),
   color: Joi.string()
     .pattern(/^#[0-9A-Fa-f]{6}$/)
     .optional()
@@ -39,6 +42,7 @@ const actualizarCategoriaSchema = Joi.object({
   descripcion: Joi.string().max(255).optional().allow('', null),
   parent_id:   Joi.string().uuid().optional().allow(null),
   orden:       Joi.number().integer().min(0).optional(),
+  icono:       Joi.string().max(10).optional().allow('', null),
   color:       Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional().allow('', null),
   activo:      Joi.boolean().optional(),
 }).min(1);
@@ -63,7 +67,7 @@ const crearProductoSchema = Joi.object({
   categoria_id: Joi.string().uuid().optional().allow(null).messages({
     'string.uuid': 'El ID de categoría no es válido.',
   }),
-  imagen_url:   Joi.string().uri().max(500).optional().allow('', null).messages({
+  imagen_url:   Joi.string().uri({ allowRelative: true }).max(1024).optional().allow('', null).messages({
     'string.uri': 'La imagen debe ser una URL válida.',
   }),
   tiene_stock:  Joi.boolean().optional().default(false),
@@ -82,7 +86,7 @@ const actualizarProductoSchema = Joi.object({
   descripcion:  Joi.string().max(500).optional().allow('', null),
   precio:       Joi.number().precision(2).min(0).optional(),
   categoria_id: Joi.string().uuid().optional().allow(null),
-  imagen_url:   Joi.string().uri().max(500).optional().allow('', null),
+  imagen_url:   Joi.string().uri({ allowRelative: true }).max(1024).optional().allow('', null),
   tiene_stock:  Joi.boolean().optional(),
   stock_actual: Joi.number().integer().min(0).optional(),
   stock_minimo: Joi.number().integer().min(0).optional(),

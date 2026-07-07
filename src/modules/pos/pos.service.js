@@ -437,7 +437,7 @@ const cambiarEstadoOrden = async ({ tenantId, ordenId, estado, motivo, usuarioId
             notas: item.notas,
           });
         }
-      } catch (_e) { /* socket.io no disponible */ }
+      } catch { /* socket.io no disponible */ }
     }
 
     if (estado === 'pagada') {
@@ -447,7 +447,7 @@ const cambiarEstadoOrden = async ({ tenantId, ordenId, estado, motivo, usuarioId
           orden_id: ordenId,
           numero_orden: orden.numero_orden,
         });
-      } catch (_e) { /* socket.io no disponible */ }
+      } catch { /* socket.io no disponible */ }
     }
 
     logger.info('Estado de orden cambiado', {
@@ -849,7 +849,7 @@ const actualizarItem = async ({ tenantId, ordenId, itemId, usuarioId, datos }) =
             nombre_producto: itemActual.nombre_producto,
           });
         }
-      } catch (_e) { /* socket.io no disponible */ }
+      } catch { /* socket.io no disponible */ }
     }
 
     logger.info('Item actualizado', { item_id: itemId, orden_id: ordenId });
@@ -918,7 +918,7 @@ const eliminarItem = async ({ tenantId, ordenId, itemId }) => {
 // DIVIDIR CUENTA Y TRANSFERIR ITEMS
 // ═════════════════════════════════════════════
 
-const moveItemsBetweenOrders = async ({ tenantId, ordenOrigenId, items, ordenDestinoId }) => {
+const moveItemsBetweenOrders = async ({ tenantId, ordenOrigenId, items }) => {
   // Verificar que los items pertenezcan a la orden origen
   const { rows: itemsVerificar } = await query(
     `SELECT id, estado FROM orden_items
@@ -1191,7 +1191,7 @@ const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }) => {
         orden_id: ordenId,
         numero_orden: orden.numero_orden,
       });
-    } catch (_e) { /* socket.io no disponible */ }
+      } catch { /* socket.io no disponible */ }
 
     logger.info('Pago registrado', {
       orden_id:     ordenId,

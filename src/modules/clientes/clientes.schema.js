@@ -15,7 +15,6 @@ const nitRegex = /^\d{4}-\d{6}-\d{3}-\d{1}$/;
 const nrcRegex = /^\d{1,7}(-\d)?$/;
 
 // DUI El Salvador: 00000000-0
-const duiRegex = /^\d{8}-\d{1}$/;
 
 // Teléfono El Salvador: 8 dígitos con formato opcional
 const telefonoRegex = /^(\+503\s?)?[267]\d{3}-?\d{4}$/;

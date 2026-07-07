@@ -22,6 +22,7 @@ module.exports = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: opcionalInt('PORT', 3000),
   ES_PRODUCCION: process.env.NODE_ENV === 'production',
+  TRUST_PROXY: process.env.TRUST_PROXY !== 'false',
 
   // Base de datos
   DATABASE_URL: requerida('DATABASE_URL'),
