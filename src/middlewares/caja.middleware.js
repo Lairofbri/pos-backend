@@ -20,7 +20,7 @@ const requiereCajaAbierta = async (req, res, next) => {
 
     req.caja_id = rows[0].id;
     next();
-  } catch (err) {
+  } catch {
     return error(res, 'Error al verificar caja abierta.', 500);
   }
 };

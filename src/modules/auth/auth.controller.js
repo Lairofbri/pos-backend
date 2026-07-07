@@ -6,24 +6,37 @@ const authService = require('./auth.service');
 const {
   loginEmailSchema,
   loginPinSchema,
-  refreshTokenSchema,
   cambiarPinSchema,
   cambiarPasswordSchema,
   crearUsuarioSchema,
   actualizarUsuarioSchema,
 } = require('./auth.schema');
-const { exito, creado, error, noAutenticado, errorServidor } = require('../../utils/response');
-const { esUuidValido, validarUuidQuery }                     = require('../../middlewares/uuid.middleware');
+const { exito, creado, error, errorServidor } = require('../../utils/response');
+const { esUuidValido } = require('../../middlewares/uuid.middleware');
+const env = require('../../config/env');
 const logger = require('../../utils/logger');
+
+const REFRESH_COOKIE = 'refresh_token';
+const COOKIE_OPTS = {
+  httpOnly: true,
+  secure: env.ES_PRODUCCION,
+  sameSite: 'strict',
+  path: '/api/auth',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
 
 // ─────────────────────────────────────────────
 // Helper: manejo de errores del service
 // ─────────────────────────────────────────────
-const manejarError = (res, err) => {
+const manejarError = (req, res, err) => {
   if (err.status && err.mensaje) {
     return error(res, err.mensaje, err.status);
   }
-  logger.error('Error no controlado en auth', { error: err.message, stack: err.stack });
+  logger.error('Error no controlado en auth', {
+    error: err.message,
+    stack: err.stack,
+    requestId: req.requestId,
+  });
   return errorServidor(res);
 };
 
@@ -42,9 +55,11 @@ const loginEmail = async (req, res) => {
       tenantId: value.tenant_id,
       ip: req.ip,
     });
-    return exito(res, resultado, 'Sesión iniciada exitosamente.');
+    const { refresh_token, ...data } = resultado;
+    res.cookie(REFRESH_COOKIE, refresh_token, COOKIE_OPTS);
+    return exito(res, data, 'Sesión iniciada exitosamente.');
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
@@ -74,40 +89,57 @@ const loginPin = async (req, res) => {
       pin:         value.pin,
       ip:          req.ip,
     });
-    return exito(res, resultado, 'Sesión iniciada exitosamente.');
+    const { refresh_token, ...data } = resultado;
+    res.cookie(REFRESH_COOKIE, refresh_token, COOKIE_OPTS);
+    return exito(res, data, 'Sesión iniciada exitosamente.');
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
 // ─────────────────────────────────────────────
 // POST /auth/refresh
+// Lee refresh token de cookie httpOnly (primario) o body (fallback)
 // ─────────────────────────────────────────────
 const refresh = async (req, res) => {
-  const { error: validacionError, value } = refreshTokenSchema.validate(req.body);
-  if (validacionError) return error(res, validacionError.details[0].message, 400);
+  const cookieToken = req.cookies?.[REFRESH_COOKIE];
+  const bodyToken = req.body?.refresh_token;
+  const refreshToken = cookieToken || bodyToken;
+
+  if (!refreshToken) {
+    return error(res, 'Refresh token requerido.', 400);
+  }
 
   try {
-    const resultado = await authService.refreshAccessToken({ refreshToken: value.refresh_token });
-    return exito(res, resultado, 'Token renovado exitosamente.');
+    const resultado = await authService.refreshAccessToken({ refreshToken });
+    const { refresh_token, ...data } = resultado;
+    res.cookie(REFRESH_COOKIE, refresh_token, COOKIE_OPTS);
+    return exito(res, data, 'Token renovado exitosamente.');
   } catch (err) {
-    return manejarError(res, err);
+    res.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
+    return manejarError(req, res, err);
   }
 };
 
 // ─────────────────────────────────────────────
 // POST /auth/logout
+// Lee refresh token de cookie httpOnly (primario) o body (fallback)
 // ─────────────────────────────────────────────
 const logout = async (req, res) => {
-  if (!req.body?.refresh_token) {
-    return error(res, 'El refresh_token es requerido para cerrar sesión.', 400);
+  const cookieToken = req.cookies?.[REFRESH_COOKIE];
+  const bodyToken = req.body?.refresh_token;
+  const refreshToken = cookieToken || bodyToken;
+
+  if (!refreshToken) {
+    return error(res, 'Refresh token requerido.', 400);
   }
 
   try {
-    await authService.logout({ refreshToken: req.body.refresh_token, tenantId: req.usuario.tenant_id });
+    await authService.logout({ refreshToken, tenantId: req.usuario.tenant_id });
+    res.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
     return exito(res, null, 'Sesión cerrada exitosamente.');
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
@@ -122,7 +154,7 @@ const me = async (req, res) => {
     });
     return exito(res, { usuario }, 'Datos del usuario actual.');
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
@@ -142,7 +174,7 @@ const cambiarPin = async (req, res) => {
     });
     return exito(res, null, 'PIN actualizado exitosamente.');
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
@@ -162,7 +194,7 @@ const cambiarPassword = async (req, res) => {
     });
     return exito(res, null, 'Contraseña actualizada exitosamente.');
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
@@ -185,7 +217,7 @@ const listarUsuariosParaPin = async (req, res) => {
     const usuarios = await authService.listarUsuariosParaPin({ tenantId });
     return exito(res, { usuarios });
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
@@ -197,7 +229,7 @@ const listarUsuarios = async (req, res) => {
     const usuarios = await authService.listarUsuarios({ tenantId: req.usuario.tenant_id });
     return exito(res, { usuarios });
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
@@ -217,7 +249,7 @@ const obtenerUsuario = async (req, res) => {
     });
     return exito(res, { usuario });
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
@@ -235,7 +267,7 @@ const crearUsuario = async (req, res) => {
     });
     return creado(res, { usuario }, 'Usuario creado exitosamente.');
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
@@ -259,7 +291,7 @@ const actualizarUsuario = async (req, res) => {
     });
     return exito(res, { usuario }, 'Usuario actualizado exitosamente.');
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
@@ -285,19 +317,19 @@ const resetearPin = async (req, res) => {
     });
     return exito(res, null, 'PIN reseteado exitosamente.');
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 
 // ─────────────────────────────────────────────
 // GET /empresas — pública (listar tenants activos)
 // ─────────────────────────────────────────────
-const listarTenants = async (_req, res) => {
+const listarTenants = async (req, res) => {
   try {
     const tenants = await authService.listarTenants();
     return exito(res, { tenants });
   } catch (err) {
-    return manejarError(res, err);
+    return manejarError(req, res, err);
   }
 };
 

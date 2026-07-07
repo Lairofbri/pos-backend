@@ -3,8 +3,8 @@
 // El controller llama a estos métodos — nunca toca la BD directamente
 
 const bcrypt = require('bcryptjs');
+const nodeCrypto = require('crypto');
 const jwt    = require('jsonwebtoken');
-const crypto = require('crypto');
 const { query } = require('../../config/database');
 const { JWT_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_SECRET, JWT_REFRESH_EXPIRES_IN } = require('../../config/env');
 const logger = require('../../utils/logger');
@@ -46,7 +46,7 @@ const generarTokens = (usuario) => {
 
 /** Hash SHA-256 del refresh token para guardar en BD (nunca el raw) */
 const hashRefreshToken = (token) =>
-  crypto.createHash('sha256').update(token).digest('hex');
+  nodeCrypto.createHash('sha256').update(token).digest('hex');
 
 /** Registra el refresh token en la BD */
 const guardarRefreshToken = async (usuarioId, tenantId, refreshToken, dispositivo, ip) => {
@@ -234,9 +234,8 @@ const loginPin = async ({ tenantId, usuarioId, pin, ip }) => {
 // ─────────────────────────────────────────────
 const refreshAccessToken = async ({ refreshToken }) => {
   // Verificar firma del refresh token
-  let decoded;
   try {
-    decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+    jwt.verify(refreshToken, JWT_REFRESH_SECRET);
   } catch {
     throw { status: 401, mensaje: 'Refresh token inválido o expirado.' };
   }

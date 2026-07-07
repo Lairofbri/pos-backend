@@ -10,7 +10,6 @@ const {
   filtrosCajaSchema,
   resumenDiarioSchema,
   verificarCuadreSchema,
-  cuadreSchema,
 } = require('./caja.schema');
 const {
   exito,

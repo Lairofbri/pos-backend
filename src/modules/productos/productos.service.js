@@ -21,7 +21,7 @@ const listarCategorias = async ({ tenantId, soloActivas = true }) => {
     : 'WHERE tenant_id = $1';
 
   const { rows } = await query(
-    `SELECT id, parent_id, nombre, descripcion, orden, color, activo, creado_en
+    `SELECT id, parent_id, nombre, descripcion, orden, icono, color, activo, creado_en
      FROM categorias
      ${condicion}
      ORDER BY orden ASC, nombre ASC`,
@@ -38,16 +38,16 @@ const listarArbolCategorias = async ({ tenantId, soloActivas = true }) => {
 
   const { rows } = await query(
     `WITH RECURSIVE arbol AS (
-       SELECT id, parent_id, nombre, descripcion, orden, color, activo, creado_en, 0 AS nivel
+       SELECT id, parent_id, nombre, descripcion, orden, icono, color, activo, creado_en, 0 AS nivel
        FROM categorias
        WHERE tenant_id = $1 AND parent_id IS NULL AND (${condicion} OR activo = TRUE)
        UNION ALL
-       SELECT c.id, c.parent_id, c.nombre, c.descripcion, c.orden, c.color, c.activo, c.creado_en, a.nivel + 1
+       SELECT c.id, c.parent_id, c.nombre, c.descripcion, c.orden, c.icono, c.color, c.activo, c.creado_en, a.nivel + 1
        FROM categorias c
        JOIN arbol a ON c.parent_id = a.id
-       WHERE c.tenant_id = $1 AND (${condicion} OR c.activo = TRUE)
-     )
-     SELECT id, parent_id, nombre, descripcion, orden, color, activo, creado_en, nivel
+        WHERE c.tenant_id = $1 AND (${condicion} OR c.activo = TRUE) AND a.nivel < 3
+      )
+      SELECT id, parent_id, nombre, descripcion, orden, icono, color, activo, creado_en, nivel
      FROM arbol
      ORDER BY nivel, orden ASC, nombre ASC`,
     [tenantId]
@@ -77,7 +77,7 @@ const listarArbolCategorias = async ({ tenantId, soloActivas = true }) => {
  */
 const obtenerCategoria = async ({ tenantId, categoriaId }) => {
   const { rows } = await query(
-    `SELECT c.id, c.parent_id, c.nombre, c.descripcion, c.orden, c.color, c.activo, c.creado_en,
+    `SELECT c.id, c.parent_id, c.nombre, c.descripcion, c.orden, c.icono, c.color, c.activo, c.creado_en,
             (SELECT jsonb_agg(jsonb_build_object('id', h.id, 'nombre', h.nombre))
              FROM categorias h WHERE h.parent_id = c.id AND h.tenant_id = c.tenant_id
             ) AS hijos,
@@ -101,17 +101,21 @@ const obtenerCategoria = async ({ tenantId, categoriaId }) => {
  * Si tiene parent_id, verifica que exista y pertenezca al mismo tenant
  */
 const crearCategoria = async ({ tenantId, datos }) => {
-  const { nombre, descripcion, parent_id, orden, color } = datos;
+  const { nombre, descripcion, parent_id, orden, icono, color } = datos;
 
   if (parent_id) {
     await validarCategoriaPadre({ tenantId, parentId: parent_id });
+    const nivelPadre = await calcularNivelCategoria({ tenantId, categoriaId: parent_id });
+    if (nivelPadre >= 2) {
+      throw { status: 400, mensaje: 'Máximo 3 niveles de categorías. No se pueden crear subcategorías más profundas.' };
+    }
   }
 
   const { rows } = await query(
-    `INSERT INTO categorias (tenant_id, nombre, descripcion, parent_id, orden, color)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, parent_id, nombre, descripcion, orden, color, activo, creado_en`,
-    [tenantId, nombre, descripcion || null, parent_id || null, orden ?? 0, color || null]
+    `INSERT INTO categorias (tenant_id, nombre, descripcion, parent_id, orden, icono, color)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, parent_id, nombre, descripcion, orden, icono, color, activo, creado_en`,
+    [tenantId, nombre, descripcion || null, parent_id || null, orden ?? 0, icono || null, color || null]
   );
 
   logger.info('Categoría creada', { tenant_id: tenantId, nombre, parent_id: parent_id || null });
@@ -143,6 +147,28 @@ const esCategoriaHoja = async ({ tenantId, categoriaId }) => {
 };
 
 /**
+ * Calcular el nivel de profundidad de una categoría
+ * 0 = raíz, 1 = subcategoría, 2 = sub-subcategoría, etc.
+ */
+const calcularNivelCategoria = async ({ tenantId, categoriaId }) => {
+  const { rows } = await query(
+    `WITH RECURSIVE ancestros AS (
+       SELECT id, parent_id, 0 AS nivel
+       FROM categorias
+       WHERE id = $1 AND tenant_id = $2
+       UNION ALL
+       SELECT c.id, c.parent_id, a.nivel + 1
+       FROM categorias c
+       JOIN ancestros a ON c.id = a.parent_id
+       WHERE c.tenant_id = $2
+     )
+     SELECT MAX(nivel) AS nivel FROM ancestros`,
+    [categoriaId, tenantId]
+  );
+  return rows[0]?.nivel ?? 0;
+};
+
+/**
  * Actualizar una categoría existente
  * Solo actualiza los campos enviados (PATCH semántico)
  */
@@ -155,6 +181,10 @@ const actualizarCategoria = async ({ tenantId, categoriaId, datos }) => {
     }
     if (datos.parent_id) {
       await validarCategoriaPadre({ tenantId, parentId: datos.parent_id });
+      const nivelPadre = await calcularNivelCategoria({ tenantId, categoriaId: datos.parent_id });
+      if (nivelPadre >= 2) {
+        throw { status: 400, mensaje: 'Máximo 3 niveles de categorías. No se pueden crear subcategorías más profundas.' };
+      }
     }
   }
 
@@ -166,6 +196,7 @@ const actualizarCategoria = async ({ tenantId, categoriaId, datos }) => {
   if (datos.descripcion !== undefined) { campos.push(`descripcion = $${idx++}`); valores.push(datos.descripcion); }
   if (datos.parent_id   !== undefined) { campos.push(`parent_id = $${idx++}`);   valores.push(datos.parent_id); }
   if (datos.orden       !== undefined) { campos.push(`orden = $${idx++}`);       valores.push(datos.orden); }
+  if (datos.icono       !== undefined) { campos.push(`icono = $${idx++}`);       valores.push(datos.icono); }
   if (datos.color       !== undefined) { campos.push(`color = $${idx++}`);       valores.push(datos.color); }
   if (datos.activo      !== undefined) { campos.push(`activo = $${idx++}`);      valores.push(datos.activo); }
 
@@ -174,7 +205,7 @@ const actualizarCategoria = async ({ tenantId, categoriaId, datos }) => {
   const { rows } = await query(
     `UPDATE categorias SET ${campos.join(', ')}
      WHERE id = $${idx++} AND tenant_id = $${idx}
-     RETURNING id, parent_id, nombre, descripcion, orden, color, activo`,
+     RETURNING id, parent_id, nombre, descripcion, orden, icono, color, activo`,
     valores
   );
 
@@ -231,10 +262,17 @@ const listarProductos = async ({ tenantId, filtros = {} }) => {
     valores.push(activo);
   }
 
-  // Filtro por categoría
+  // Filtro por categoría (con expansión de subcategorías via CTE recursivo)
+  let cte = '';
   if (categoria_id) {
-    condiciones.push(`p.categoria_id = $${idx++}`);
+    const cteIdx = idx++;
     valores.push(categoria_id);
+    cte = `WITH RECURSIVE subcats AS (
+      SELECT id FROM categorias WHERE id = $${cteIdx} AND tenant_id = $1
+      UNION ALL
+      SELECT c.id FROM categorias c JOIN subcats s ON c.parent_id = s.id
+    ) `;
+    condiciones.push(`p.categoria_id IN (SELECT id FROM subcats)`);
   }
 
   // Búsqueda por texto en nombre y descripción
@@ -253,7 +291,7 @@ const listarProductos = async ({ tenantId, filtros = {} }) => {
 
   // Query principal con JOIN a categorías
   const { rows } = await query(
-    `SELECT
+    `${cte}SELECT
        p.id, p.nombre, p.descripcion, p.precio,
        p.imagen_url, p.tiene_stock, p.stock_actual, p.stock_minimo,
        p.codigo, p.activo, p.orden, p.creado_en,
@@ -270,7 +308,7 @@ const listarProductos = async ({ tenantId, filtros = {} }) => {
 
   // Conteo total para paginación
   const { rows: conteo } = await query(
-    `SELECT COUNT(*) as total
+    `${cte}SELECT COUNT(*) as total
      FROM productos p
      WHERE ${condiciones.join(' AND ')}`,
     valores
