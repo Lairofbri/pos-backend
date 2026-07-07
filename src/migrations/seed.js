@@ -54,7 +54,8 @@ const sembrarMenusTenant = async (tenantId) => {
     { id: '00000000-0000-4000-8000-000000000005', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Combos',     icono: 'gift',        ruta: '/admin/combos',     orden: 2, permiso_codigo: null },
     { id: '00000000-0000-4000-8000-000000000004', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Productos',  icono: 'package',     ruta: '/admin/productos',  orden: 3, permiso_codigo: 'productos.ver' },
     { id: '00000000-0000-4000-8000-000000000008', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Caja',       icono: 'dollar-sign', ruta: '/admin/caja',       orden: 5, permiso_codigo: 'caja.historial' },
-    { id: '00000000-0000-4000-8000-000000000009', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Clientes',   icono: 'users',       ruta: '/admin/clientes',   orden: 6, permiso_codigo: 'clientes.ver' },
+      { id: '00000000-0000-4000-8000-000000000009', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Clientes',   icono: 'users',       ruta: '/admin/clientes',   orden: 6, permiso_codigo: 'clientes.ver' },
+      { id: '00000000-0000-4000-8000-000000000012', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Impresoras', icono: 'printer',     ruta: '/admin/impresoras', orden: 7, permiso_codigo: 'impresion.configurar' },
 
     // Hijos de Configuraciones
     { id: '00000000-0000-4000-8000-000000000011', parent_id: '00000000-0000-4000-8000-000000000010', titulo: 'Menú',           icono: 'menu',   ruta: '/configuraciones/menus', orden: 1, permiso_codigo: 'roles.configurar' },

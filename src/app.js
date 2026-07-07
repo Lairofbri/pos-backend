@@ -24,6 +24,7 @@ const combosRoutes    = require('./modules/combos/combos.routes');
 const cocinaRoutes    = require('./modules/cocina/cocina.routes');
 const menusRoutes     = require('./modules/menus/menus.routes');
 const catalogosRoutes = require('./modules/catalogos/catalogos.routes');
+const impresionRoutes = require('./modules/impresion/impresion.routes');
 
 
 const app = express();
@@ -170,6 +171,7 @@ apiV1.use(combosRoutes);
 apiV1.use(cocinaRoutes);
 apiV1.use(menusRoutes);
 apiV1.use(catalogosRoutes);
+apiV1.use(impresionRoutes);
 
 app.use('/api/v1', apiV1);
 app.use('/api',     apiV1); // backward compat — el frontend actual usa /api/

@@ -1191,7 +1191,22 @@ const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }) => {
         orden_id: ordenId,
         numero_orden: orden.numero_orden,
       });
-      } catch { /* socket.io no disponible */ }
+    } catch { /* socket.io no disponible */ }
+
+    // Impresión automática de ticket de consumo post-pago
+    try {
+      const impresionService = require('../impresion/impresion.service');
+      impresionService.imprimirTicket({
+        tenantId,
+        ordenId,
+        tipo: 'ticket-consumo',
+      }).catch((err) => {
+        logger.warn('No se pudo imprimir ticket automaticamente', {
+          error: err.message,
+          orden_id: ordenId,
+        });
+      });
+    } catch { /* modulo de impresion no disponible */ }
 
     logger.info('Pago registrado', {
       orden_id:     ordenId,
