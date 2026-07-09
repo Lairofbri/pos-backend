@@ -1,0 +1,6 @@
+import { Router } from 'express';
+import { handler } from './handler.js';
+
+const router = Router({ mergeParams: true });
+router.put('/auth/cambiar-pin', handler);
+export default router;

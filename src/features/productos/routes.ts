@@ -1,0 +1,37 @@
+import { Router } from 'express';
+import { autenticar } from '../../shared/middlewares/auth.middleware.js';
+import categoriasListar from './categorias/listar/endpoint.js';
+import categoriasObtener from './categorias/obtener/endpoint.js';
+import categoriasCrear from './categorias/crear/endpoint.js';
+import categoriasActualizar from './categorias/actualizar/endpoint.js';
+import categoriasDesactivar from './categorias/desactivar/endpoint.js';
+import productosStockBajo from './productos/stock-bajo/endpoint.js';
+import productosListar from './productos/listar/endpoint.js';
+import productosObtener from './productos/obtener/endpoint.js';
+import productosCrear from './productos/crear/endpoint.js';
+import productosActualizar from './productos/actualizar/endpoint.js';
+import productosToggle from './productos/toggle/endpoint.js';
+import productosAjustarStock from './productos/ajustar-stock/endpoint.js';
+import productosDesactivar from './productos/desactivar/endpoint.js';
+import imagenSubir from './imagen/subir/endpoint.js';
+import imagenEliminar from './imagen/eliminar/endpoint.js';
+
+const router = Router({ mergeParams: true });
+router.use(autenticar);
+router.use(categoriasListar);
+router.use(categoriasObtener);
+router.use(categoriasCrear);
+router.use(categoriasActualizar);
+router.use(categoriasDesactivar);
+router.use(productosStockBajo);
+router.use(productosListar);
+router.use(productosObtener);
+router.use(productosCrear);
+router.use(productosActualizar);
+router.use(productosToggle);
+router.use(productosAjustarStock);
+router.use(productosDesactivar);
+router.use(imagenSubir);
+router.use(imagenEliminar);
+
+export default router;
