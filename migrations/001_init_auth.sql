@@ -135,7 +135,7 @@ CREATE TRIGGER trigger_usuarios_updated
 
 INSERT INTO tenants (id, nombre, nit, plan)
 VALUES (
-  'a0000000-0000-0000-0000-000000000001',
+  'a0000000-0000-4000-8000-000000000001',
   'Restaurante Demo',
   '0000-000000-000-0',
   'pro'
@@ -143,8 +143,8 @@ VALUES (
 
 INSERT INTO sucursales (id, tenant_id, nombre, es_principal)
 VALUES (
-  'b0000000-0000-0000-0000-000000000001',
-  'a0000000-0000-0000-0000-000000000001',
+  'b0000000-0000-4000-8000-000000000001',
+  'a0000000-0000-4000-8000-000000000001',
   'Sucursal Principal',
   TRUE
 ) ON CONFLICT DO NOTHING;

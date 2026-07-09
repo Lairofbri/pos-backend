@@ -17,17 +17,23 @@ const agregarComboAOrden = async ({ tenantId, ordenId, datos, combo }: { tenantI
     throw { status: 400, mensaje: `El combo "${combo.nombre}" no tiene productos asignados.` };
   }
 
+  const cantidadCombos = (datos.cantidad as number) || 1;
+  const precioComboTotal = Number(((combo.precio as number) * cantidadCombos).toFixed(2));
+
+  // Calcular precio original total para distribución proporcional
+  let precioOriginalTotal = 0;
   for (const c of componentes as Array<Record<string, unknown>>) {
     if (!c.activo) {
       throw { status: 400, mensaje: `"${c.nombre}" no está disponible actualmente.` };
     }
-    const cantidadTotal = (c.cantidad as number) * (datos.cantidad as number);
+    const cantidadTotal = (c.cantidad as number) * cantidadCombos;
     if (c.tiene_stock && (c.stock_actual as number) < cantidadTotal) {
       throw {
         status: 400,
         mensaje: `Stock insuficiente para "${c.nombre}". Necesita ${cantidadTotal}, hay ${c.stock_actual}.`,
       };
     }
+    precioOriginalTotal += (c.precio as number) * cantidadTotal;
   }
 
   const client = await getClient();
@@ -35,19 +41,35 @@ const agregarComboAOrden = async ({ tenantId, ordenId, datos, combo }: { tenantI
     await client.query('BEGIN');
 
     const itemsInsertados: Array<Record<string, unknown>> = [];
+    let subtotalAcumulado = 0;
 
-    for (const c of componentes as Array<Record<string, unknown>>) {
-      const cantidadTotal = (c.cantidad as number) * (datos.cantidad as number);
-      const subtotal = Number(((c.precio as number) * cantidadTotal).toFixed(2));
+    for (let i = 0; i < (componentes as Array<Record<string, unknown>>).length; i++) {
+      const c = (componentes as Array<Record<string, unknown>>)[i];
+      const cantidadTotal = (c.cantidad as number) * cantidadCombos;
+      const subtotalOriginal = (c.precio as number) * cantidadTotal;
+
+      // Distribuir precio combo proporcionalmente
+      let subtotal: number;
+      if (i === (componentes as Array<Record<string, unknown>>).length - 1) {
+        // Último item absorbe diferencia por redondeo
+        subtotal = Number((precioComboTotal - subtotalAcumulado).toFixed(2));
+      } else {
+        const ratio = precioOriginalTotal > 0 ? subtotalOriginal / precioOriginalTotal : 1 / (componentes as Array<Record<string, unknown>>).length;
+        subtotal = Number((precioComboTotal * ratio).toFixed(2));
+        subtotalAcumulado += subtotal;
+      }
+
+      const precioUnitario = Number((subtotal / cantidadTotal).toFixed(2));
 
       const { rows } = await client.query(
         `INSERT INTO orden_items
-           (orden_id, tenant_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, notas, descuento_porcentaje)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING id, producto_id, nombre_producto AS nombre, precio_unitario, cantidad, subtotal, descuento_porcentaje, estado, notas`,
+           (orden_id, tenant_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, notas, descuento_porcentaje, combo_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING id, producto_id, nombre_producto AS nombre, precio_unitario, cantidad, subtotal, descuento_porcentaje, estado, notas, combo_id`,
         [
-          ordenId, tenantId, c.producto_id, c.nombre, c.precio,
+          ordenId, tenantId, c.producto_id, c.nombre, precioUnitario,
           cantidadTotal, subtotal, (datos.notas as string) || null, (datos.descuento_porcentaje as number) ?? 0,
+          combo.id,
         ]
       );
 
@@ -69,9 +91,10 @@ const agregarComboAOrden = async ({ tenantId, ordenId, datos, combo }: { tenantI
       orden_id: ordenId,
       combo: combo.nombre as string,
       items: (componentes as Array<unknown>).length,
+      precio_combo_total: precioComboTotal,
     });
 
-    return { items: itemsInsertados, totales, es_combo: true };
+    return { items: itemsInsertados, totales, es_combo: true, combo_nombre: combo.nombre };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

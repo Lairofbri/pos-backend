@@ -83,10 +83,16 @@ const limiteAuth = rateLimit({
 });
 app.use('/api/auth/login', limiteAuth);
 app.use('/api/auth/login-pin', limiteAuth);
-app.use('/api/usuarios/pin-list', limiteAuth);
 app.use('/api/v1/auth/login', limiteAuth);
 app.use('/api/v1/auth/login-pin', limiteAuth);
-app.use('/api/v1/usuarios/pin-list', limiteAuth);
+
+const limitePinList = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { ok: false, mensaje: 'Demasiadas solicitudes. Intenta más tarde.' },
+});
+app.use('/api/usuarios/pin-list', limitePinList);
+app.use('/api/v1/usuarios/pin-list', limitePinList);
 
 const limiteRefresh = rateLimit({
   windowMs: 15 * 60 * 1000,

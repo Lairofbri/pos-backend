@@ -440,6 +440,8 @@ export const listarUsuariosParaPin = async ({ tenantId }: { tenantId: string }) 
     `SELECT id, nombre, apellido, rol
      FROM usuarios
      WHERE tenant_id = $1 AND activo = TRUE
+       AND pin_hash IS NOT NULL
+       AND (bloqueado_hasta IS NULL OR bloqueado_hasta < NOW())
      ORDER BY nombre`,
     [tenantId]
   );
