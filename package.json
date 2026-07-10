@@ -9,7 +9,7 @@
     "dev:ts": "tsx watch src/server.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "migrate": "node src/migrations/run.js",
+    "migrate": "tsx src/migrations/run.ts",
     "test": "node --test tests/integration/auth.test.cjs",
     "test:ts": "pnpm run build && node --test dist/tests/integration/auth.test.js",
     "test:auth": "node --test tests/integration/auth.test.cjs",

@@ -18,10 +18,9 @@ const agregarComboAOrden = async ({ tenantId, ordenId, datos, combo }: { tenantI
   }
 
   const cantidadCombos = (datos.cantidad as number) || 1;
-  const precioComboTotal = Number(((combo.precio as number) * cantidadCombos).toFixed(2));
+  const precioCombo = Number(combo.precio) || 0;
+  const precioComboTotal = Number((precioCombo * cantidadCombos).toFixed(2));
 
-  // Calcular precio original total para distribución proporcional
-  let precioOriginalTotal = 0;
   for (const c of componentes as Array<Record<string, unknown>>) {
     if (!c.activo) {
       throw { status: 400, mensaje: `"${c.nombre}" no está disponible actualmente.` };
@@ -33,42 +32,41 @@ const agregarComboAOrden = async ({ tenantId, ordenId, datos, combo }: { tenantI
         mensaje: `Stock insuficiente para "${c.nombre}". Necesita ${cantidadTotal}, hay ${c.stock_actual}.`,
       };
     }
-    precioOriginalTotal += (c.precio as number) * cantidadTotal;
   }
 
   const client = await getClient();
   try {
     await client.query('BEGIN');
 
+    // 1. Insertar línea virtual del combo (producto_id = NULL, con precio)
+    const { rows: comboLineRows } = await client.query(
+      `INSERT INTO orden_items
+         (orden_id, tenant_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, notas, descuento_porcentaje, combo_id)
+       VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, producto_id, nombre_producto AS nombre, precio_unitario, cantidad, subtotal, descuento_porcentaje, estado, notas, combo_id`,
+      [
+        ordenId, tenantId, combo.nombre, precioCombo,
+        cantidadCombos, precioComboTotal, (datos.notas as string) || null, (datos.descuento_porcentaje as number) ?? 0,
+        combo.id,
+      ]
+    );
+
     const itemsInsertados: Array<Record<string, unknown>> = [];
-    let subtotalAcumulado = 0;
+    const comboLine = comboLineRows[0] as Record<string, unknown>;
+    itemsInsertados.push(comboLine);
 
-    for (let i = 0; i < (componentes as Array<Record<string, unknown>>).length; i++) {
-      const c = (componentes as Array<Record<string, unknown>>)[i];
+    // 2. Insertar componentes (precio_unitario = 0, subtotal = 0)
+    for (const c of componentes as Array<Record<string, unknown>>) {
       const cantidadTotal = (c.cantidad as number) * cantidadCombos;
-      const subtotalOriginal = (c.precio as number) * cantidadTotal;
-
-      // Distribuir precio combo proporcionalmente
-      let subtotal: number;
-      if (i === (componentes as Array<Record<string, unknown>>).length - 1) {
-        // Último item absorbe diferencia por redondeo
-        subtotal = Number((precioComboTotal - subtotalAcumulado).toFixed(2));
-      } else {
-        const ratio = precioOriginalTotal > 0 ? subtotalOriginal / precioOriginalTotal : 1 / (componentes as Array<Record<string, unknown>>).length;
-        subtotal = Number((precioComboTotal * ratio).toFixed(2));
-        subtotalAcumulado += subtotal;
-      }
-
-      const precioUnitario = Number((subtotal / cantidadTotal).toFixed(2));
 
       const { rows } = await client.query(
         `INSERT INTO orden_items
            (orden_id, tenant_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, notas, descuento_porcentaje, combo_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         VALUES ($1, $2, $3, $4, 0, $5, 0, $6, $7, $8)
          RETURNING id, producto_id, nombre_producto AS nombre, precio_unitario, cantidad, subtotal, descuento_porcentaje, estado, notas, combo_id`,
         [
-          ordenId, tenantId, c.producto_id, c.nombre, precioUnitario,
-          cantidadTotal, subtotal, (datos.notas as string) || null, (datos.descuento_porcentaje as number) ?? 0,
+          ordenId, tenantId, c.producto_id, c.nombre,
+          cantidadTotal, (datos.notas as string) || null, (datos.descuento_porcentaje as number) ?? 0,
           combo.id,
         ]
       );

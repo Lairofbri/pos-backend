@@ -138,13 +138,15 @@ export const obtenerOrdenShared = async ({ tenantId, ordenId }: { tenantId: stri
 
   const { rows: items } = await query(
     `SELECT
-       id, producto_id, nombre_producto AS nombre, precio_unitario,
-       cantidad, subtotal, COALESCE(descuento_porcentaje, 0) as descuento_porcentaje,
-       (subtotal - (subtotal * COALESCE(descuento_porcentaje, 0) / 100)) as subtotal_con_descuento,
-       estado, notas, enviado_en, creado_en
-     FROM orden_items
-     WHERE orden_id = $1 AND tenant_id = $2
-     ORDER BY creado_en ASC`,
+       oi.id, oi.producto_id, oi.nombre_producto AS nombre, oi.precio_unitario,
+       oi.cantidad, oi.subtotal, COALESCE(oi.descuento_porcentaje, 0) as descuento_porcentaje,
+       (oi.subtotal - (oi.subtotal * COALESCE(oi.descuento_porcentaje, 0) / 100)) as subtotal_con_descuento,
+       oi.estado, oi.notas, oi.enviado_en, oi.creado_en,
+       oi.combo_id,
+       (SELECT c.nombre FROM combos c WHERE c.id = oi.combo_id) AS combo_nombre
+     FROM orden_items oi
+     WHERE oi.orden_id = $1 AND oi.tenant_id = $2
+     ORDER BY oi.creado_en ASC`,
     [ordenId, tenantId]
   );
 
