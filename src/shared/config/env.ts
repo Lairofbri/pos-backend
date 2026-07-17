@@ -38,6 +38,10 @@ export const env = {
   R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY ?? '',
   R2_BUCKET_NAME: process.env.R2_BUCKET_NAME ?? 'pos-productos',
   R2_PUBLIC_URL: process.env.R2_PUBLIC_URL ?? '',
+
+  DTE_SERVICE_URL: process.env.DTE_SERVICE_URL ?? 'http://localhost:4000',
+  DTE_API_KEY: process.env.DTE_API_KEY ?? '',
+  DTE_TIMEOUT: opcionalInt('DTE_TIMEOUT', 10000),
 } as const;
 
 export type Env = typeof env;
