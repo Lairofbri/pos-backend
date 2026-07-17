@@ -20,7 +20,9 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
     referencia_tarjeta?: string;
   };
 
-  const montoAPagar = Number(((orden.total as number) + ((orden.propina_monto as number) || 0)).toFixed(2));
+  const totalOrden = Number(orden.total) || 0;
+  const propina = Number(orden.propina_monto) || 0;
+  const montoAPagar = Number((totalOrden + propina).toFixed(2));
   const totalPagado = Number((monto_efectivo + monto_tarjeta).toFixed(2));
 
   if (totalPagado < montoAPagar) {

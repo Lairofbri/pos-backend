@@ -23,6 +23,7 @@ import cocinaRoutes from './features/cocina/routes.js';
 import combosRoutes from './features/combos/routes.js';
 import menusRoutes from './features/menus/routes.js';
 import permisosRoutes from './features/permisos/routes.js';
+import dteRoutes from './features/dte/routes.js';
 
 const app = express();
 
@@ -145,6 +146,7 @@ apiV1.use(cocinaRoutes);
 apiV1.use(menusRoutes);
 apiV1.use(catalogosRoutes);
 apiV1.use(impresionRoutes);
+apiV1.use(dteRoutes);
 
 app.use('/api/v1', apiV1);
 app.use('/api', apiV1);

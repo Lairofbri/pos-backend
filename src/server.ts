@@ -5,6 +5,7 @@ import { env } from './shared/config/env.js';
 const { PORT, CORS_ORIGINS, ES_PRODUCCION } = env;
 import { verificarConexion } from './shared/config/database.js';
 import { logger } from './shared/utils/logger.js';
+import { iniciarCronDte } from './features/dte/cron.js';
 
 const httpServer = http.createServer(app);
 
@@ -57,6 +58,7 @@ const arrancar = async () => {
       puerto: PORT,
     });
     logger.info('Socket.io activo para tiempo real');
+    iniciarCronDte();
   });
 
   const shutdown = (señal: string) => {
