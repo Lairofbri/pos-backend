@@ -3,13 +3,14 @@ import { env } from './config/env.js';
 import { query } from './config/database.js';
 import { logger } from './utils/logger.js';
 
-export const crearClienteDte = (baseURL: string, apiKey: string) => {
+export const crearClienteDte = (baseURL: string, apiKey: string, tenantId?: string) => {
   const cliente = axios.create({
     baseURL,
     timeout: env.DTE_TIMEOUT,
     headers: {
       'Content-Type': 'application/json',
       ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+      ...(tenantId ? { 'X-Tenant-Id': tenantId } : {}),
     },
   });
 
@@ -52,5 +53,5 @@ export const obtenerClientePorTenant = async (tenantId: string) => {
   const baseURL = tenant?.dte_service_url || env.DTE_SERVICE_URL;
   const apiKey = tenant?.dte_api_key || env.DTE_API_KEY;
 
-  return crearClienteDte(baseURL, apiKey);
+  return crearClienteDte(baseURL, apiKey, tenantId);
 };

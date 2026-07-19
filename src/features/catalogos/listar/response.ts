@@ -4,7 +4,6 @@ export type CatalogoItem = {
 };
 
 export type CatalogosData = {
-  zonas: CatalogoItem[];
   roles: CatalogoItem[];
   tipos_documento: CatalogoItem[];
   metodos_pago: CatalogoItem[];

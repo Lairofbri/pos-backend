@@ -13,7 +13,6 @@ export const actualizarMesa = async ({ tenantId, mesaId, datos }: { tenantId: st
     numero?: string;
     nombre?: string;
     capacidad?: number;
-    zona?: string;
     activo?: boolean;
     estado?: string;
   };
@@ -21,7 +20,6 @@ export const actualizarMesa = async ({ tenantId, mesaId, datos }: { tenantId: st
   if (d.numero !== undefined) { campos.push(`numero = $${idx++}`); valores.push(d.numero); }
   if (d.nombre !== undefined) { campos.push(`nombre = $${idx++}`); valores.push(d.nombre); }
   if (d.capacidad !== undefined) { campos.push(`capacidad = $${idx++}`); valores.push(d.capacidad); }
-  if (d.zona !== undefined) { campos.push(`zona = $${idx++}`); valores.push(d.zona); }
   if (d.activo !== undefined) { campos.push(`activo = $${idx++}`); valores.push(d.activo); }
   if (d.estado !== undefined) { campos.push(`estado = $${idx++}`); valores.push(d.estado); }
 
@@ -30,7 +28,7 @@ export const actualizarMesa = async ({ tenantId, mesaId, datos }: { tenantId: st
   const { rows } = await query(
     `UPDATE mesas SET ${campos.join(', ')}
      WHERE id = $${idx++} AND tenant_id = $${idx}
-     RETURNING id, numero, nombre, capacidad, estado, activo, zona`,
+     RETURNING id, numero, nombre, capacidad, estado, activo`,
     valores
   );
 

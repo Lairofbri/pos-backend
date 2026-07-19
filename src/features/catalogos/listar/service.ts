@@ -14,7 +14,6 @@ export const obtenerCatalogos = async ({ tenantId }: { tenantId: string }) => {
   const catalogos = (rows[0] as { data?: Record<string, unknown> })?.data || {};
 
   return {
-    zonas: (catalogos.zonas as unknown[]) || [],
     roles: rolesArr,
     tipos_documento: (catalogos.tipos_documento as unknown[]) || [],
     metodos_pago: (catalogos.metodos_pago as unknown[]) || [],

@@ -32,7 +32,7 @@ export async function handler(req: Request, res: Response) {
   try {
     const resultado = await loginPin({
       tenantId,
-      usuarioId: value.usuario_id,
+      usuarioId: value.usuario_id || undefined,
       pin: value.pin,
       ip: req.ip,
     });
