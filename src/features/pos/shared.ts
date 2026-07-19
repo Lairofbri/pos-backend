@@ -88,7 +88,7 @@ export const adjuntarOrdenActiva = async (mesas: Record<string, unknown> | Recor
 
 export const obtenerMesaShared = async ({ tenantId, mesaId }: { tenantId: string; mesaId: string }) => {
   const { rows } = await query(
-    `SELECT id, numero, nombre, capacidad, estado, activo, sucursal_id, zona
+    `SELECT id, numero, nombre, capacidad, estado, activo, sucursal_id
      FROM mesas WHERE id = $1 AND tenant_id = $2`,
     [mesaId, tenantId]
   );
@@ -123,8 +123,8 @@ export const obtenerOrdenShared = async ({ tenantId, ordenId }: { tenantId: stri
        o.propina_porcentaje, o.propina_monto,
        o.mesa_id, o.cliente_id, o.usuario_id,
        o.creado_en, o.actualizado_en, o.cerrado_en,
-       m.numero AS mesa_numero, m.zona,
-       CONCAT_WS(' ', c.nombre, c.apellido) AS cliente_nombre,
+        m.numero AS mesa_numero,
+        CONCAT_WS(' ', c.nombre, c.apellido) AS cliente_nombre,
        u.nombre AS usuario_nombre, u.rol AS usuario_rol
      FROM ordenes o
      LEFT JOIN mesas m ON m.id = o.mesa_id

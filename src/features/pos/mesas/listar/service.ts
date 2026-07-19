@@ -7,7 +7,7 @@ export const listarMesas = async ({ tenantId, soloActivas = true }: { tenantId: 
     : 'WHERE tenant_id = $1';
 
   const { rows } = await query(
-    `SELECT id, numero, nombre, capacidad, estado, activo, sucursal_id, zona
+    `SELECT id, numero, nombre, capacidad, estado, activo, sucursal_id
      FROM mesas
      ${condicion}
      ORDER BY numero ASC`,

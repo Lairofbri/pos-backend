@@ -9,6 +9,5 @@ export const crearMesaSchema = Joi.object({
     'number.min': 'La capacidad debe ser al menos 1.',
     'any.required': 'La capacidad es requerida.',
   }),
-  zona: Joi.string().max(50).optional().allow('', null),
   sucursal_id: Joi.string().uuid().optional().allow(null),
 });

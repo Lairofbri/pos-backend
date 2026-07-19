@@ -22,7 +22,7 @@ const TIPOS_FORMATOS: Record<string, { formato: typeof formatoPreCuenta; printer
 
 const obtenerDatosOrden = async (tenantId: string, ordenId: string) => {
   const { rows: ordenRows } = await query(
-    `SELECT o.*, m.numero AS mesa_numero, m.zona,
+    `SELECT o.*, m.numero AS mesa_numero,
             CONCAT_WS(' ', c.nombre, c.apellido) AS cliente_nombre,
             c.nit AS cliente_nit, c.nrc AS cliente_nrc,
             c.direccion AS cliente_direccion,

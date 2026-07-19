@@ -100,7 +100,14 @@ export const loginEmail = async ({ email, password, tenantId, ip }: { email: str
   };
 };
 
-export const loginPin = async ({ tenantId, usuarioId, pin, ip }: { tenantId: string; usuarioId: string; pin: string; ip: string | undefined }) => {
+export const loginPin = async ({ tenantId, usuarioId, pin, ip }: { tenantId: string; usuarioId?: string; pin: string; ip: string | undefined }) => {
+  if (usuarioId) {
+    return loginPinConUsuario({ tenantId, usuarioId, pin, ip });
+  }
+  return loginPinPorPin({ tenantId, pin, ip });
+};
+
+const loginPinConUsuario = async ({ tenantId, usuarioId, pin, ip }: { tenantId: string; usuarioId: string; pin: string; ip: string | undefined }) => {
   const { rows } = await query(
     `SELECT u.*, t.activo as tenant_activo
      FROM usuarios u
@@ -184,6 +191,56 @@ export const loginPin = async ({ tenantId, usuarioId, pin, ip }: { tenantId: str
   await guardarRefreshToken(usuario.id as string, usuario.tenant_id as string, refreshToken, null, ip || null);
 
   logger.info('Login PIN exitoso', { usuario_id: usuario.id as string, rol: usuario.rol as string });
+
+  return {
+    usuario: formatearUsuario(usuario),
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    expires_in: env.JWT_EXPIRES_IN,
+  };
+};
+
+const loginPinPorPin = async ({ tenantId, pin, ip }: { tenantId: string; pin: string; ip: string | undefined }) => {
+  const { rows } = await query(
+    `SELECT u.*, t.activo as tenant_activo
+     FROM usuarios u
+     JOIN tenants t ON t.id = u.tenant_id
+     WHERE u.tenant_id = $1 AND u.activo = TRUE AND u.pin_hash IS NOT NULL`,
+    [tenantId]
+  );
+
+  if (rows.length === 0) {
+    throw { status: 401, mensaje: 'Credenciales incorrectas.' };
+  }
+
+  if (!(rows[0] as Record<string, unknown>).tenant_activo) {
+    throw { status: 403, mensaje: 'La cuenta del restaurante está inactiva.' };
+  }
+
+  let usuarioMatch: Record<string, unknown> | null = null;
+  for (const row of rows) {
+    const match = await bcrypt.compare(String(pin), (row as Record<string, unknown>).pin_hash as string);
+    if (match) {
+      usuarioMatch = row as Record<string, unknown>;
+      break;
+    }
+  }
+
+  if (!usuarioMatch) {
+    throw { status: 401, mensaje: 'PIN incorrecto.' };
+  }
+
+  const usuario = usuarioMatch;
+
+  await query(
+    'UPDATE usuarios SET intentos_pin = 0, bloqueado_hasta = NULL, ultimo_acceso = NOW() WHERE id = $1 AND tenant_id = $2',
+    [usuario.id, usuario.tenant_id]
+  );
+
+  const { accessToken, refreshToken } = generarTokens(usuario);
+  await guardarRefreshToken(usuario.id as string, usuario.tenant_id as string, refreshToken, null, ip || null);
+
+  logger.info('Login PIN exitoso (por PIN)', { usuario_id: usuario.id as string, rol: usuario.rol as string });
 
   return {
     usuario: formatearUsuario(usuario),

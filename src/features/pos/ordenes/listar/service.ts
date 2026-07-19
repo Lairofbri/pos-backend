@@ -43,8 +43,8 @@ export const listarOrdenes = async ({ tenantId, filtros = {} }: { tenantId: stri
        o.propina_porcentaje, o.propina_monto,
        o.mesa_id, o.cliente_id, o.usuario_id,
        o.creado_en, o.actualizado_en,
-       m.numero AS mesa_numero, m.zona,
-       CONCAT_WS(' ', c.nombre, c.apellido) AS cliente_nombre,
+        m.numero AS mesa_numero,
+        CONCAT_WS(' ', c.nombre, c.apellido) AS cliente_nombre,
        u.nombre AS usuario_nombre,
        COUNT(oi.id) AS total_items
      FROM ordenes o
@@ -53,7 +53,7 @@ export const listarOrdenes = async ({ tenantId, filtros = {} }: { tenantId: stri
      LEFT JOIN usuarios u ON u.id = o.usuario_id
      LEFT JOIN orden_items oi ON oi.orden_id = o.id AND oi.estado != 'cancelado'
      WHERE ${condiciones.join(' AND ')}
-     GROUP BY o.id, m.numero, m.zona, c.nombre, c.apellido, u.nombre
+      GROUP BY o.id, m.numero, c.nombre, c.apellido, u.nombre
      ORDER BY o.creado_en DESC
      LIMIT $${idx++} OFFSET $${idx}`,
     [...valores, limite, offset]

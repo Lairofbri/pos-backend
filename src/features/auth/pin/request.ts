@@ -1,9 +1,8 @@
 import Joi from 'joi';
 
 export const loginPinSchema = Joi.object({
-  usuario_id: Joi.string().uuid().required().messages({
+  usuario_id: Joi.string().uuid().optional().messages({
     'string.uuid': 'ID de usuario inválido.',
-    'any.required': 'El ID de usuario es requerido.',
   }),
   pin: Joi.string()
     .pattern(/^\d{6}$/)
