@@ -23,6 +23,21 @@ const DEPTO_MAP: Record<string, string> = {
   'la unión': '14', 'la union': '14',
 };
 
+const MAPA_METODO_MH: Record<string, string> = {
+  efectivo: '01',
+  tarjeta: '03',
+  tarjeta_debito: '02',
+  tarjeta_credito: '03',
+  transferencia: '05',
+  bitcoin: '11',
+  monedero_electronico: '09',
+  cheque: '04',
+  tarjeta_empresarial: '06',
+  bonos: '07',
+  vales: '10',
+  otro: '99',
+};
+
 const ENDPOINTS: Record<string, string> = {
   '01': '/api/dte/emitir/fcf',
   '03': '/api/dte/emitir/ccf',
@@ -106,24 +121,39 @@ export const emitir = async ({ tenantId, usuarioId, datos }: { tenantId: string;
   const propina = Number(orden.propina) || 0;
   const totalSinPropina = totalOrden - propina;
 
+  const cuerpoItems = mapearItems(items);
+
+  // Construir pagos[] con códigos MH (CAT-007)
+  const pagosMH: Array<{ codigo: string; montoPago: number; referencia?: string | null }> = [];
   let montoEfectivo = 0;
-  let montoTarjeta = 0;
   for (const pago of pagos) {
     const metodo = (pago.metodo as string) || 'efectivo';
-    if (metodo === 'efectivo') montoEfectivo += Number(pago.monto_efectivo) || 0;
-    else montoTarjeta += Number(pago.monto_tarjeta) || 0;
+    const codigoMH = MAPA_METODO_MH[metodo] || '99';
+    let monto = Number(pago.total_pagado) || 0;
+
+    if (metodo === 'mixto') {
+      const ef = Number(pago.monto_efectivo) || 0;
+      const tj = Number(pago.monto_tarjeta) || 0;
+      if (ef > 0) pagosMH.push({ codigo: '01', montoPago: ef });
+      if (tj > 0) pagosMH.push({ codigo: '03', montoPago: tj });
+      montoEfectivo += ef;
+    } else {
+      if (metodo === 'efectivo') montoEfectivo += monto;
+      const ref = (pago.referencia_tarjeta as string)
+        || (pago.referencia_transferencia as string)
+        || (pago.hash_bitcoin as string)
+        || (pago.referencia_cheque as string)
+        || null;
+      pagosMH.push({ codigo: codigoMH, montoPago: monto, referencia: ref });
+    }
   }
-
-  const metodoPago = montoTarjeta > 0 && montoEfectivo > 0 ? 'mixto'
-    : montoTarjeta > 0 ? 'tarjeta' : 'efectivo';
-
-  const cuerpoItems = mapearItems(items);
 
   const payloadBase: Record<string, unknown> = {
     items: cuerpoItems,
-    metodo_pago: metodoPago,
+    pagos: pagosMH,
+    metodo_pago: 'mixto',
     monto_efectivo: Math.round(montoEfectivo * 100) / 100,
-    monto_tarjeta: Math.round(montoTarjeta * 100) / 100,
+    monto_tarjeta: 0,
     password_pri: passwordPri,
     orden_referencia: orden.numero_orden?.toString() || null,
     cod_estable_mh: tenant.cod_estable_mh || null,
@@ -194,7 +224,7 @@ export const emitir = async ({ tenantId, usuarioId, datos }: { tenantId: string;
 
   const endpoint = ENDPOINTS[tipoDte];
 
-  logger.info('Emitiendo DTE desde POS', { ordenId, tipoDte, endpoint, items: cuerpoItems.length, metodoPago, totalSinPropina });
+  logger.info('Emitiendo DTE desde POS', { ordenId, tipoDte, endpoint, items: cuerpoItems.length, pagos: pagosMH, totalSinPropina });
 
   let resultado: Record<string, unknown>;
   try {

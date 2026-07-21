@@ -17,6 +17,9 @@ export const handler = async (req: Request, res: Response) => {
   if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
+    if (!value.sucursal_id && req.sucursalId) {
+      value.sucursal_id = req.sucursalId;
+    }
     const mesa = await crearMesa({
       tenantId: req.usuario!.tenant_id,
       datos: value,

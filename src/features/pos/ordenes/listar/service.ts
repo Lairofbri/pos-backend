@@ -1,7 +1,7 @@
 import { query } from '../../../../shared/config/database.js';
 import { ESTADOS_FINALES } from '../../../../shared/utils/constants.js';
 
-export const listarOrdenes = async ({ tenantId, filtros = {} }: { tenantId: string; filtros: Record<string, unknown> }) => {
+export const listarOrdenes = async ({ tenantId, filtros = {}, sucursalId }: { tenantId: string; filtros: Record<string, unknown>; sucursalId?: string }) => {
   const {
     estado, tipo, origen, usuario_id,
     fecha_desde, fecha_hasta, activas,
@@ -21,6 +21,7 @@ export const listarOrdenes = async ({ tenantId, filtros = {} }: { tenantId: stri
   const condiciones = ['o.tenant_id = $1'];
   const valores: unknown[] = [tenantId];
   let idx = 2;
+  if (sucursalId) { condiciones.push(`o.sucursal_id = $${idx++}`); valores.push(sucursalId); }
 
   if (estado) { condiciones.push(`o.estado = $${idx++}`); valores.push(estado); }
   if (tipo) { condiciones.push(`o.tipo = $${idx++}`); valores.push(tipo); }

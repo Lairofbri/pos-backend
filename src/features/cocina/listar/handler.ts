@@ -9,6 +9,7 @@ export async function handler(req: Request, res: Response) {
     const items = await listarItemsActivos({
       tenantId: req.usuario!.tenant_id,
       soloPendientes,
+      sucursalId: req.sucursalId,
     });
     return exito(res, items);
   } catch (err) {

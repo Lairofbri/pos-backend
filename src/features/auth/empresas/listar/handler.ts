@@ -5,8 +5,8 @@ import { logger } from '../../../../shared/utils/logger.js';
 
 export async function handler(req: Request, res: Response) {
   try {
-    const tenants = await listarTenants();
-    return exito(res, { tenants });
+    const { tenants, sucursales } = await listarTenants();
+    return exito(res, { tenants, sucursales });
   } catch (err) {
     const e = err as { status?: number; mensaje?: string };
     if (e.status && e.mensaje) return error(res, e.mensaje, e.status);

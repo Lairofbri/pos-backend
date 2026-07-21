@@ -1,19 +1,22 @@
 import { query } from '../../../../shared/config/database.js';
 import { adjuntarOrdenActiva } from '../../shared.js';
 
-export const listarMesas = async ({ tenantId, soloActivas = true }: { tenantId: string; soloActivas?: boolean }) => {
-  const condicion = soloActivas
-    ? 'WHERE tenant_id = $1 AND activo = TRUE'
-    : 'WHERE tenant_id = $1';
+export const listarMesas = async ({ tenantId, soloActivas = true, sucursalId }: { tenantId: string; soloActivas?: boolean; sucursalId?: string }) => {
+  const valores: unknown[] = [tenantId];
+  let idx = 2;
+
+  const condiciones = [`tenant_id = $1`];
+  if (soloActivas) condiciones.push(`activo = TRUE`);
+  if (sucursalId) { condiciones.push(`sucursal_id = $${idx++}`); valores.push(sucursalId); }
 
   const { rows } = await query(
     `SELECT id, numero, nombre, capacidad, estado, activo, sucursal_id
      FROM mesas
-     ${condicion}
+     WHERE ${condiciones.join(' AND ')}
      ORDER BY numero ASC`,
-    [tenantId]
+    valores
   );
 
-  await adjuntarOrdenActiva(rows, tenantId);
+  await adjuntarOrdenActiva(rows, tenantId, sucursalId);
   return rows;
 };

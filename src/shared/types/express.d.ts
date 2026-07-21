@@ -13,5 +13,6 @@ declare module 'express' {
       exp?: number;
     };
     requestId?: string;
+    sucursalId?: string;
   }
 }
