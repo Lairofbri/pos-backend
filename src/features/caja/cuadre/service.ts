@@ -24,18 +24,29 @@ export const obtenerCuadre = async ({ tenantId, cajaId }: { tenantId: string; ca
 
   const caja = rows[0] as Record<string, unknown>;
 
+  const pagosValores: unknown[] = [tenantId, caja.fecha_apertura, caja.fecha_cierre];
+  let pagosSucursalJoin = '';
+  let pagosSucursalCond = '';
+  if (caja.sucursal_id) {
+    pagosSucursalJoin = ' JOIN ordenes o_s ON o_s.id = p.orden_id';
+    pagosSucursalCond = ' AND o_s.sucursal_id = $4';
+    pagosValores.push(caja.sucursal_id as string);
+  }
+
   const { rows: metodos } = await query(
     `SELECT
        p.metodo,
        COUNT(DISTINCT p.orden_id)::int AS cantidad_ordenes,
        SUM(p.total_pagado) AS total
      FROM pagos p
+     ${pagosSucursalJoin}
      WHERE p.tenant_id = $1
        AND p.creado_en >= $2
        AND ($3::timestamptz IS NULL OR p.creado_en <= $3)
+       ${pagosSucursalCond}
      GROUP BY p.metodo
      ORDER BY p.metodo`,
-    [tenantId, caja.fecha_apertura, caja.fecha_cierre]
+    pagosValores
   );
 
   const { rows: movimientos } = await query(

@@ -24,6 +24,7 @@ export const handler = async (req: Request, res: Response) => {
     const resultado = await agregarItem({
       tenantId: req.usuario!.tenant_id,
       ordenId: req.params.id as string,
+      usuarioId: req.usuario!.id,
       datos: value,
     });
     return creado(res, resultado, 'Producto agregado a la orden.');

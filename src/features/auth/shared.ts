@@ -21,7 +21,7 @@ const generarTokens = (usuario: Record<string, unknown>) => {
   const payload = generarPayload(usuario);
   const accessToken = jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN } as jwt.SignOptions);
   const refreshToken = jwt.sign(
-    { sub: usuario.id as string, tenant_id: usuario.tenant_id as string },
+    { sub: usuario.id as string, tenant_id: usuario.tenant_id as string, jti: crypto.randomUUID() },
     env.JWT_REFRESH_SECRET,
     { expiresIn: env.JWT_REFRESH_EXPIRES_IN } as jwt.SignOptions
   );
@@ -35,11 +35,24 @@ const guardarRefreshToken = async (usuarioId: string, tenantId: string, refreshT
   const tokenHash = hashRefreshToken(refreshToken);
   const decoded = jwt.decode(refreshToken) as { exp: number };
   const expiraEn = new Date(decoded.exp * 1000);
-  await query(
-    `INSERT INTO refresh_tokens (usuario_id, tenant_id, token_hash, dispositivo, ip_origen, expira_en)
-     VALUES ($1, $2, $3, $4, $5::inet, $6)`,
-    [usuarioId, tenantId, tokenHash, dispositivo || null, ip || null, expiraEn]
-  );
+  try {
+    await query(
+      `INSERT INTO refresh_tokens (usuario_id, tenant_id, token_hash, dispositivo, ip_origen, expira_en)
+       VALUES ($1, $2, $3, $4, $5::inet, $6)`,
+      [usuarioId, tenantId, tokenHash, dispositivo || null, ip || null, expiraEn]
+    );
+  } catch (err) {
+    if ((err as { code?: string }).code === '23505') {
+      logger.warn('Refresh token duplicado (jti collision), reemplazando', { usuario_id: usuarioId });
+      await query(
+        `UPDATE refresh_tokens SET token_hash = $1, expira_en = $2, activo = TRUE
+         WHERE usuario_id = $3 AND tenant_id = $4 AND activo = FALSE`,
+        [tokenHash, expiraEn, usuarioId, tenantId]
+      );
+      return;
+    }
+    throw err;
+  }
 };
 
 const formatearUsuario = (row: Record<string, unknown>) => ({
@@ -506,8 +519,20 @@ export const listarUsuariosParaPin = async ({ tenantId }: { tenantId: string }) 
 };
 
 export const listarTenants = async () => {
-  const { rows } = await query(
+  const { rows: tenants } = await query(
     'SELECT id, nombre, logo_url FROM tenants WHERE activo = TRUE ORDER BY nombre'
   );
-  return rows;
+
+  const tenantIds = tenants.map((t: Record<string, unknown>) => t.id);
+  const { rows: sucursales } = tenantIds.length > 0
+    ? await query(
+        `SELECT id, tenant_id, nombre, es_principal
+         FROM sucursales
+         WHERE tenant_id = ANY($1::uuid[]) AND activo = TRUE
+         ORDER BY es_principal DESC, nombre`,
+        [tenantIds]
+      )
+    : { rows: [] };
+
+  return { tenants, sucursales };
 };

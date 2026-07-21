@@ -9,9 +9,9 @@
 // SOLO ejecutar una vez al inicio. Es idempotente (no duplica si ya existe).
 
 const bcrypt = require('bcryptjs');
-const { query, verificarConexion } = require('../config/database');
-const env = require('../config/env');
-const logger = require('../utils/logger');
+const { query, verificarConexion } = require('../shared/config/database.js');
+const { env } = require('../shared/config/env.js');
+const { logger } = require('../shared/utils/logger.js');
 
 const TENANT_ID    = 'a0000000-0000-4000-8000-000000000001';
 const SUCURSAL_ID  = 'b0000000-0000-4000-8000-000000000001';
@@ -80,6 +80,136 @@ const sembrarMenusTenant = async (tenantId) => {
   logger.info('Menús default sembrados para tenant', { tenant_id: tenantId, menus: menus.length });
 };
 
+const sembrarCategorias = async (tenantId) => {
+  const categorias = [
+    { id: 'c0000000-0000-4000-8000-000000000001', nombre: 'Entradas',       orden: 1, color: '#FF6B6B' },
+    { id: 'c0000000-0000-4000-8000-000000000002', nombre: 'Platos fuertes', orden: 2, color: '#4ECDC4' },
+    { id: 'c0000000-0000-4000-8000-000000000003', nombre: 'Bebidas',        orden: 3, color: '#45B7D1' },
+    { id: 'c0000000-0000-4000-8000-000000000004', nombre: 'Postres',        orden: 4, color: '#96CEB4' },
+    { id: 'c0000000-0000-4000-8000-000000000005', nombre: 'Combos',         orden: 5, color: '#F9CA24' },
+  ];
+
+  for (const c of categorias) {
+    await query(
+      `INSERT INTO categorias (id, tenant_id, nombre, orden, color)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (id) DO UPDATE SET
+         nombre = EXCLUDED.nombre,
+         orden = EXCLUDED.orden,
+         color = EXCLUDED.color`,
+      [c.id, tenantId, c.nombre, c.orden, c.color]
+    );
+  }
+  logger.info('Categorías sembradas', { tenant_id: tenantId, categorias: categorias.length });
+};
+
+const sembrarProductos = async (tenantId) => {
+  const productos = [
+    { nombre: 'Sopa del día',       precio: 3.50,  categoria_id: 'c0000000-0000-4000-8000-000000000001', orden: 1 },
+    { nombre: 'Ensalada mixta',     precio: 4.00,  categoria_id: 'c0000000-0000-4000-8000-000000000001', orden: 2 },
+    { nombre: 'Ceviche de camarón', precio: 5.50,  categoria_id: 'c0000000-0000-4000-8000-000000000001', orden: 3 },
+    { nombre: 'Pollo a la plancha', precio: 8.50,  categoria_id: 'c0000000-0000-4000-8000-000000000002', orden: 1 },
+    { nombre: 'Carne asada',        precio: 12.00, categoria_id: 'c0000000-0000-4000-8000-000000000002', orden: 2 },
+    { nombre: 'Pasta al pesto',     precio: 7.50,  categoria_id: 'c0000000-0000-4000-8000-000000000002', orden: 3 },
+    { nombre: 'Pupusas revueltas',  precio: 2.50,  categoria_id: 'c0000000-0000-4000-8000-000000000002', orden: 4 },
+    { nombre: 'Agua natural',       precio: 1.00,  categoria_id: 'c0000000-0000-4000-8000-000000000003', orden: 1 },
+    { nombre: 'Refresco',           precio: 1.50,  categoria_id: 'c0000000-0000-4000-8000-000000000003', orden: 2 },
+    { nombre: 'Jugo natural',       precio: 2.50,  categoria_id: 'c0000000-0000-4000-8000-000000000003', orden: 3 },
+    { nombre: 'Café',               precio: 1.75,  categoria_id: 'c0000000-0000-4000-8000-000000000003', orden: 4 },
+    { nombre: 'Flan',               precio: 2.50,  categoria_id: 'c0000000-0000-4000-8000-000000000004', orden: 1 },
+    { nombre: 'Pastel del día',     precio: 3.00,  categoria_id: 'c0000000-0000-4000-8000-000000000004', orden: 2 },
+    { nombre: 'Helado',             precio: 2.00,  categoria_id: 'c0000000-0000-4000-8000-000000000004', orden: 3 },
+  ];
+
+  for (const p of productos) {
+    await query(
+      `INSERT INTO productos (tenant_id, categoria_id, nombre, precio, orden)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT DO NOTHING`,
+      [tenantId, p.categoria_id, p.nombre, p.precio, p.orden]
+    );
+  }
+  logger.info('Productos sembrados', { tenant_id: tenantId, productos: productos.length });
+};
+
+const sembrarMesas = async (tenantId, sucursalId) => {
+  const mesas = [
+    { numero: '1',  nombre: 'Mesa 1',  capacidad: 4 },
+    { numero: '2',  nombre: 'Mesa 2',  capacidad: 4 },
+    { numero: '3',  nombre: 'Mesa 3',  capacidad: 6 },
+    { numero: '4',  nombre: 'Mesa 4',  capacidad: 2 },
+    { numero: '5',  nombre: 'Mesa 5',  capacidad: 8 },
+    { numero: 'B1', nombre: 'Barra 1', capacidad: 1 },
+    { numero: 'B2', nombre: 'Barra 2', capacidad: 1 },
+    { numero: 'T1', nombre: 'Terraza 1', capacidad: 4 },
+    { numero: 'T2', nombre: 'Terraza 2', capacidad: 4 },
+    { numero: 'V1', nombre: 'VIP 1',   capacidad: 6 },
+  ];
+
+  for (const m of mesas) {
+    await query(
+      `INSERT INTO mesas (tenant_id, sucursal_id, numero, nombre, capacidad, estado)
+       VALUES ($1, $2, $3, $4, $5, 'disponible')
+       ON CONFLICT (tenant_id, numero) DO UPDATE SET
+         nombre = EXCLUDED.nombre,
+         capacidad = EXCLUDED.capacidad`,
+      [tenantId, sucursalId, m.numero, m.nombre, m.capacidad]
+    );
+  }
+  logger.info('Mesas sembradas', { tenant_id: tenantId, mesas: mesas.length });
+};
+
+const sembrarCombos = async (tenantId) => {
+  const combos = [
+    { id: 'd0000000-0000-4000-8000-000000000001', nombre: 'Combo Familiar',  precio: 7.00 },
+    { id: 'd0000000-0000-4000-8000-000000000002', nombre: 'Combo Ejecutivo', precio: 10.00 },
+    { id: 'd0000000-0000-4000-8000-000000000003', nombre: 'Combo Infantil',  precio: 5.50 },
+  ];
+
+  for (const c of combos) {
+    await query(
+      `INSERT INTO combos (id, tenant_id, nombre, precio, activo)
+       VALUES ($1, $2, $3, $4, true)
+       ON CONFLICT (id) DO UPDATE SET
+         nombre = EXCLUDED.nombre,
+         precio = EXCLUDED.precio`,
+      [c.id, tenantId, c.nombre, c.precio]
+    );
+  }
+
+  const { rows: productos } = await query(
+    'SELECT id, nombre FROM productos WHERE tenant_id = $1',
+    [tenantId]
+  );
+  const prodMap = Object.fromEntries(productos.map((p) => [p.nombre, p.id]));
+
+  const comboProductos = [
+    { combo_id: 'd0000000-0000-4000-8000-000000000001', nombre: 'Pupusas revueltas', cantidad: 2 },
+    { combo_id: 'd0000000-0000-4000-8000-000000000001', nombre: 'Refresco',           cantidad: 2 },
+    { combo_id: 'd0000000-0000-4000-8000-000000000002', nombre: 'Pollo a la plancha', cantidad: 1 },
+    { combo_id: 'd0000000-0000-4000-8000-000000000002', nombre: 'Ensalada mixta',     cantidad: 1 },
+    { combo_id: 'd0000000-0000-4000-8000-000000000002', nombre: 'Jugo natural',       cantidad: 1 },
+    { combo_id: 'd0000000-0000-4000-8000-000000000003', nombre: 'Pasta al pesto',     cantidad: 1 },
+    { combo_id: 'd0000000-0000-4000-8000-000000000003', nombre: 'Refresco',           cantidad: 1 },
+    { combo_id: 'd0000000-0000-4000-8000-000000000003', nombre: 'Helado',             cantidad: 1 },
+  ];
+
+  for (const cp of comboProductos) {
+    const productoId = prodMap[cp.nombre];
+    if (!productoId) {
+      logger.warn(`Producto no encontrado para combo: ${cp.nombre}`);
+      continue;
+    }
+    await query(
+      `INSERT INTO combo_productos (combo_id, producto_id, cantidad, tenant_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT DO NOTHING`,
+      [cp.combo_id, productoId, cp.cantidad, tenantId]
+    );
+  }
+  logger.info('Combos sembrados', { tenant_id: tenantId, combos: combos.length });
+};
+
 const ejecutarSeed = async () => {
   logger.info('Iniciando seed de datos iniciales...');
   await verificarConexion();
@@ -123,6 +253,18 @@ const ejecutarSeed = async () => {
 
   // 6. Sembrar catálogos default (siempre, idempotente)
   await query('CALL sp_sembrar_catalogos_tenant($1)', [TENANT_ID]);
+
+  // 7. Sembrar categorías de ejemplo
+  await sembrarCategorias(TENANT_ID);
+
+  // 8. Sembrar productos de ejemplo
+  await sembrarProductos(TENANT_ID);
+
+  // 9. Sembrar mesas de ejemplo
+  await sembrarMesas(TENANT_ID, SUCURSAL_ID);
+
+  // 10. Sembrar combos de ejemplo
+  await sembrarCombos(TENANT_ID);
 
   logger.info('Seed completado exitosamente.');
   logger.info('─────────────────────────────────────');

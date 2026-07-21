@@ -16,6 +16,7 @@ export const handler = async (req: Request, res: Response) => {
     const mesas = await listarMesas({
       tenantId: req.usuario!.tenant_id,
       soloActivas,
+      sucursalId: req.sucursalId,
     });
     return exito(res, { mesas });
   } catch (err) {

@@ -5,7 +5,11 @@ import { exito, error, errorServidor } from '../../../shared/utils/response.js';
 import { logger } from '../../../shared/utils/logger.js';
 
 export async function handler(req: Request, res: Response) {
-  const { sucursal_id } = req.query as { sucursal_id?: string };
+  let { sucursal_id } = req.query as { sucursal_id?: string };
+
+  if (!sucursal_id && req.sucursalId) {
+    sucursal_id = req.sucursalId;
+  }
 
   if (sucursal_id && !esUuidValido(sucursal_id)) {
     return error(res, 'El parámetro sucursal_id no tiene un formato UUID válido.', 400);

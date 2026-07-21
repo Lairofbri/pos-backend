@@ -12,6 +12,7 @@ export async function handler(req: Request, res: Response) {
     const resumen = await resumenDiario({
       tenantId: req.usuario!.tenant_id,
       fecha: value.fecha || null,
+      sucursalId: req.sucursalId,
     });
     return exito(res, { resumen });
   } catch (err) {

@@ -17,7 +17,7 @@ export async function handler(req: Request, res: Response) {
     const caja = await cerrarCaja({
       tenantId: req.usuario!.tenant_id,
       usuarioId: req.usuario!.id,
-      datos: value,
+      datos: { ...value, sucursal_id: value.sucursal_id || req.sucursalId },
     });
     return exito(res, { caja }, 'Caja cerrada exitosamente.');
   } catch (err) {

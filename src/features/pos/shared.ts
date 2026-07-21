@@ -61,17 +61,24 @@ export const validarTransicion = (estadoActual: string, estadoNuevo: string) => 
   }
 };
 
-export const adjuntarOrdenActiva = async (mesas: Record<string, unknown> | Record<string, unknown>[], tenantId: string) => {
+export const adjuntarOrdenActiva = async (mesas: Record<string, unknown> | Record<string, unknown>[], tenantId: string, sucursalId?: string) => {
   const esArray = Array.isArray(mesas);
   const lista = esArray ? mesas : [mesas];
   if (lista.length === 0) return mesas;
 
   const mesaIds = lista.map(m => m.id);
+  let sucursalCondicion = '';
+  const valores: unknown[] = [mesaIds, tenantId];
+  if (sucursalId) {
+    sucursalCondicion = ' AND sucursal_id = $3';
+    valores.push(sucursalId);
+  }
   const { rows: ordenes } = await query(
     `SELECT mesa_id, id as orden_id, creado_en as orden_creada_en, total as orden_total
      FROM ordenes
-     WHERE mesa_id = ANY($1::uuid[]) AND tenant_id = $2 AND estado NOT IN ('pagada', 'cancelada')`,
-    [mesaIds, tenantId]
+     WHERE mesa_id = ANY($1::uuid[]) AND tenant_id = $2 AND estado NOT IN ('pagada', 'cancelada')
+       ${sucursalCondicion}`,
+    valores
   );
 
   const ordenPorMesa: Record<string, unknown> = {};

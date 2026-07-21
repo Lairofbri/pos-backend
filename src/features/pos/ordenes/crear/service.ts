@@ -2,7 +2,7 @@ import { getClient } from '../../../../shared/config/database.js';
 import { logger } from '../../../../shared/utils/logger.js';
 import { obtenerMesaShared } from '../../shared.js';
 
-export const crearOrden = async ({ tenantId, usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
+export const crearOrden = async ({ tenantId, usuarioId, datos, sucursalId }: { tenantId: string; usuarioId: string; datos: Record<string, unknown>; sucursalId?: string }) => {
   const { tipo, mesa_id, cliente_id, notas, porcentaje_descuento = 0, propina_porcentaje = 10 } = datos as {
     tipo: string;
     mesa_id?: string;
@@ -31,8 +31,8 @@ export const crearOrden = async ({ tenantId, usuarioId, datos }: { tenantId: str
 
     const { rows } = await client.query(
       `INSERT INTO ordenes
-         (tenant_id, tipo, mesa_id, cliente_id, usuario_id, notas, porcentaje_descuento, propina_porcentaje, origen, numero_externo)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         (tenant_id, sucursal_id, tipo, mesa_id, cliente_id, usuario_id, notas, porcentaje_descuento, propina_porcentaje, origen, numero_externo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING
          id, tipo, estado, numero_orden, origen, numero_externo,
          subtotal, descuento, total, gravado, iva,
@@ -40,7 +40,9 @@ export const crearOrden = async ({ tenantId, usuarioId, datos }: { tenantId: str
          mesa_id, cliente_id, usuario_id, notas,
          porcentaje_descuento, creado_en`,
       [
-        tenantId, tipo, mesa_id || null, cliente_id || null, usuarioId,
+        tenantId,
+        sucursalId || null,
+        tipo, mesa_id || null, cliente_id || null, usuarioId,
         notas || null, porcentaje_descuento, propina_porcentaje,
         (datos as Record<string, unknown>).origen || 'pos',
         (datos as Record<string, unknown>).numero_externo || null,

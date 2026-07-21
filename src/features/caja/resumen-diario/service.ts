@@ -1,8 +1,17 @@
 import { query } from '../../../shared/config/database.js';
 
-export const resumenDiario = async ({ tenantId, fecha }: { tenantId: string; fecha?: string | null }) => {
+export const resumenDiario = async ({ tenantId, fecha, sucursalId }: { tenantId: string; fecha?: string | null; sucursalId?: string }) => {
   const fechaObj = fecha ? new Date(fecha) : new Date();
   const fechaStr = fechaObj.toISOString().split('T')[0];
+
+  let sucursalJoin = '';
+  let sucursalCondicion = '';
+  const valoresBase: unknown[] = [tenantId, fechaStr];
+  if (sucursalId) {
+    sucursalJoin = ' JOIN ordenes o_s ON o_s.id = p.orden_id';
+    sucursalCondicion = ` AND o_s.sucursal_id = $3`;
+    valoresBase.push(sucursalId);
+  }
 
   const { rows: metodos } = await query(
     `SELECT
@@ -10,10 +19,12 @@ export const resumenDiario = async ({ tenantId, fecha }: { tenantId: string; fec
        COUNT(DISTINCT p.orden_id)::int AS cantidad_ordenes,
        SUM(p.total_pagado) AS total
      FROM pagos p
+     ${sucursalJoin}
      WHERE p.tenant_id = $1 AND p.creado_en::date = $2::date
+       ${sucursalCondicion}
      GROUP BY p.metodo
      ORDER BY p.metodo`,
-    [tenantId, fechaStr]
+    valoresBase
   );
 
   const { rows: totalRows } = await query(
@@ -21,19 +32,29 @@ export const resumenDiario = async ({ tenantId, fecha }: { tenantId: string; fec
        COUNT(DISTINCT p.orden_id)::int AS total_ordenes,
        COALESCE(SUM(p.total_pagado), 0) AS total_ingresos
      FROM pagos p
-     WHERE p.tenant_id = $1 AND p.creado_en::date = $2::date`,
-    [tenantId, fechaStr]
+     ${sucursalJoin}
+     WHERE p.tenant_id = $1 AND p.creado_en::date = $2::date
+       ${sucursalCondicion}`,
+    valoresBase
   );
 
   const { total_ordenes, total_ingresos } = totalRows[0] as { total_ordenes: string; total_ingresos: string };
+
+  let ordenesCondicion = '';
+  const valoresOrdenes: unknown[] = [tenantId, fechaStr];
+  if (sucursalId) {
+    ordenesCondicion = ` AND sucursal_id = $3`;
+    valoresOrdenes.push(sucursalId);
+  }
 
   const { rows: ordenesRows } = await query(
     `SELECT
        COUNT(*)::int AS cantidad_ordenes,
        COUNT(*) FILTER (WHERE cliente_id IS NOT NULL)::int AS clientes_atendidos
      FROM ordenes
-     WHERE tenant_id = $1 AND estado = 'pagada' AND creado_en::date = $2::date`,
-    [tenantId, fechaStr]
+     WHERE tenant_id = $1 AND estado = 'pagada' AND creado_en::date = $2::date
+       ${ordenesCondicion}`,
+    valoresOrdenes
   );
 
   const { cantidad_ordenes, clientes_atendidos } = ordenesRows[0] as { cantidad_ordenes: string; clientes_atendidos: string };

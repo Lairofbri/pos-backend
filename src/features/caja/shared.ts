@@ -14,6 +14,9 @@ export const obtenerCajaAbierta = async ({ tenantId, sucursalId = null }: { tena
     `SELECT c.id, c.tenant_id, c.sucursal_id, c.estado,
             c.monto_inicial, c.total_esperado,
             c.total_ventas, c.total_efectivo, c.total_tarjeta,
+            c.total_transferencia, c.total_bitcoin, c.total_monedero,
+            c.total_cheque, c.total_tarjeta_empresarial,
+            c.total_bonos, c.total_vales, c.total_otros,
             c.total_retiros, c.total_depositos,
             c.fecha_apertura, c.usuario_apertura_id,
             u.nombre AS usuario_apertura
@@ -32,12 +35,20 @@ export const recalcularTotalesCaja = async (client: { query: (text: string, para
     `UPDATE cajas SET
        total_ventas = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso'), 0),
        total_efectivo = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso' AND mc.metodo_pago = 'efectivo'), 0),
-       total_tarjeta = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso' AND mc.metodo_pago = 'tarjeta'), 0),
+       total_tarjeta = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso' AND mc.metodo_pago IN ('tarjeta', 'tarjeta_debito', 'tarjeta_credito', 'tarjeta_empresarial')), 0),
+       total_transferencia = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso' AND mc.metodo_pago = 'transferencia'), 0),
+       total_bitcoin = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso' AND mc.metodo_pago = 'bitcoin'), 0),
+       total_monedero = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso' AND mc.metodo_pago = 'monedero_electronico'), 0),
+       total_cheque = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso' AND mc.metodo_pago = 'cheque'), 0),
+       total_tarjeta_empresarial = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso' AND mc.metodo_pago = 'tarjeta_empresarial'), 0),
+       total_bonos = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso' AND mc.metodo_pago = 'bonos'), 0),
+       total_vales = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso' AND mc.metodo_pago = 'vales'), 0),
+       total_otros = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'ingreso' AND mc.metodo_pago = 'otro'), 0),
        total_retiros = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'retiro'), 0),
        total_depositos = COALESCE((SELECT SUM(mc.monto) FROM movimientos_caja mc WHERE mc.caja_id = $1 AND mc.tipo = 'deposito'), 0),
        total_esperado = cajas.monto_inicial + COALESCE((
          SELECT SUM(CASE
-           WHEN mc.tipo = 'ingreso' AND mc.metodo_pago = 'efectivo' THEN mc.monto
+           WHEN mc.tipo = 'ingreso' AND mc.metodo_pago IN ('efectivo', 'transferencia', 'monedero_electronico', 'cheque', 'bonos', 'vales') THEN mc.monto
            WHEN mc.tipo = 'deposito' THEN mc.monto
            WHEN mc.tipo = 'retiro' THEN -mc.monto
            ELSE 0

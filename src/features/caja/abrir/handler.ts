@@ -12,7 +12,7 @@ export async function handler(req: Request, res: Response) {
     const caja = await abrirCaja({
       tenantId: req.usuario!.tenant_id,
       usuarioId: req.usuario!.id,
-      datos: value,
+      datos: { ...value, sucursal_id: value.sucursal_id || req.sucursalId },
     });
     return creado(res, { caja }, 'Caja abierta exitosamente. Buen turno.');
   } catch (err) {

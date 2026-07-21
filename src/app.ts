@@ -11,6 +11,7 @@ const { CORS_ORIGINS, ES_PRODUCCION } = env;
 import { logger } from './shared/utils/logger.js';
 import { noEncontrado, errorServidor } from './shared/utils/response.js';
 import { requestIdMiddleware } from './shared/utils/requestId.js';
+import { resolverSucursal } from './shared/middlewares/sucursal.middleware.js';
 
 import authRoutes from './features/auth/routes.js';
 import productosRoutes from './features/productos/routes.js';
@@ -24,6 +25,7 @@ import combosRoutes from './features/combos/routes.js';
 import menusRoutes from './features/menus/routes.js';
 import permisosRoutes from './features/permisos/routes.js';
 import dteRoutes from './features/dte/routes.js';
+import adminRoutes from './features/admin/routes.js';
 
 const app = express();
 
@@ -64,7 +66,7 @@ app.use(cors({
       }
     : true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id', 'X-Sucursal-Id'],
   credentials: true,
 }));
 
@@ -136,6 +138,7 @@ app.get('/health', (_req: Request, res: Response) => {
 
 const apiV1 = express.Router();
 apiV1.use(authRoutes);
+apiV1.use(resolverSucursal);
 apiV1.use(productosRoutes);
 apiV1.use(posRoutes);
 apiV1.use(clientesRoutes);
@@ -147,6 +150,7 @@ apiV1.use(menusRoutes);
 apiV1.use(catalogosRoutes);
 apiV1.use(impresionRoutes);
 apiV1.use(dteRoutes);
+apiV1.use(adminRoutes);
 
 app.use('/api/v1', apiV1);
 app.use('/api', apiV1);

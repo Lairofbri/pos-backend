@@ -38,6 +38,7 @@ export const handler = async (req: Request, res: Response) => {
     const resultado = await listarOrdenes({
       tenantId: req.usuario!.tenant_id,
       filtros,
+      sucursalId: req.sucursalId,
     });
     return exito(res, resultado);
   } catch (err) {

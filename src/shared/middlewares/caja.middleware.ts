@@ -4,11 +4,19 @@ import { error } from '../utils/response.js';
 
 export const requiereCajaAbierta = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const valores: unknown[] = [req.usuario!.tenant_id];
+    let idx = 2;
+    let sucursalCondicion = '';
+    if (req.sucursalId) {
+      sucursalCondicion = ` AND sucursal_id = $${idx++}`;
+      valores.push(req.sucursalId);
+    }
     const { rows } = await query(
       `SELECT id FROM cajas
        WHERE tenant_id = $1 AND estado = 'abierta'
+         ${sucursalCondicion}
        ORDER BY fecha_apertura DESC LIMIT 1`,
-      [req.usuario!.tenant_id]
+      valores
     );
 
     if (rows.length === 0) {

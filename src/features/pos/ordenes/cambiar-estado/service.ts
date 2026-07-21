@@ -31,6 +31,16 @@ export const cambiarEstadoOrden = async ({ tenantId, ordenId, estado, motivo, us
       itemsEnviados = rows as Array<Record<string, unknown>>;
     }
 
+    if (estado === 'lista') {
+      const { rows } = await client.query(
+        `UPDATE orden_items SET estado = 'listo'
+         WHERE orden_id = $1 AND tenant_id = $2 AND estado IN ('pendiente', 'en_proceso')
+         RETURNING id, producto_id, nombre_producto, cantidad`,
+        [ordenId, tenantId]
+      );
+      itemsEnviados = rows as Array<Record<string, unknown>>;
+    }
+
     if (estado === 'cancelada' && orden.mesa_id) {
       await client.query(
         'UPDATE mesas SET estado = $1 WHERE id = $2 AND tenant_id = $3',
@@ -51,6 +61,13 @@ export const cambiarEstadoOrden = async ({ tenantId, ordenId, estado, motivo, us
           notas: item.notas,
         });
       }
+    }
+
+    if (estado === 'lista' && itemsEnviados.length > 0) {
+      io.to(`tenant:${tenantId}`).emit('cocina:item-listo', {
+        orden_id: ordenId,
+        items: itemsEnviados.map(i => ({ item_id: i.id, nombre_producto: i.nombre_producto })),
+      });
     }
 
     if (estado === 'pagada') {

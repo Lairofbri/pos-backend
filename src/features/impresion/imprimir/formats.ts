@@ -135,7 +135,21 @@ export const formatoTicketConsumo = ({
 
   if (pagos && pagos.length > 0) {
     for (const pago of pagos) {
-      const metodoLabel: Record<string, string> = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', mixto: 'Mixto' };
+      const metodoLabel: Record<string, string> = {
+        efectivo: 'Efectivo',
+        tarjeta: 'Tarjeta',
+        tarjeta_debito: 'T.Débito',
+        tarjeta_credito: 'T.Crédito',
+        mixto: 'Mixto',
+        transferencia: 'Transferencia',
+        bitcoin: 'Bitcoin',
+        monedero_electronico: 'Monedero',
+        cheque: 'Cheque',
+        tarjeta_empresarial: 'T.Empresarial',
+        bonos: 'Bonos',
+        vales: 'Vales',
+        otro: 'Otro',
+      };
       const label = metodoLabel[pago.metodo] || pago.metodo;
       l.push(` ${label}:           ${DERECHA(formatearMoneda(pago.total_pagado), 16)}`);
       if (Number(pago.vuelto) > 0) {
@@ -143,6 +157,15 @@ export const formatoTicketConsumo = ({
       }
       if (pago.referencia_tarjeta) {
         l.push(` Ref: ${pago.referencia_tarjeta.slice(0, 20)}`);
+      }
+      if (pago.referencia_transferencia) {
+        l.push(` Ref: ${String(pago.referencia_transferencia).slice(0, 20)}`);
+      }
+      if (pago.hash_bitcoin) {
+        l.push(` Hash: ${String(pago.hash_bitcoin).slice(0, 20)}`);
+      }
+      if (pago.referencia_cheque) {
+        l.push(` Cheque: ${String(pago.referencia_cheque).slice(0, 20)}`);
       }
     }
   }
@@ -225,7 +248,21 @@ export const formatoFactura = ({
 
   if (pagos && pagos.length > 0) {
     for (const pago of pagos) {
-      const metodoLabel: Record<string, string> = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', mixto: 'Mixto' };
+      const metodoLabel: Record<string, string> = {
+        efectivo: 'Efectivo',
+        tarjeta: 'Tarjeta',
+        tarjeta_debito: 'T.Débito',
+        tarjeta_credito: 'T.Crédito',
+        mixto: 'Mixto',
+        transferencia: 'Transferencia',
+        bitcoin: 'Bitcoin',
+        monedero_electronico: 'Monedero',
+        cheque: 'Cheque',
+        tarjeta_empresarial: 'T.Empresarial',
+        bonos: 'Bonos',
+        vales: 'Vales',
+        otro: 'Otro',
+      };
       const label = metodoLabel[pago.metodo] || pago.metodo;
       l.push(` ${label}:           ${DERECHA(formatearMoneda(pago.total_pagado), 16)}`);
       if (Number(pago.vuelto) > 0) {
