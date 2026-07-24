@@ -8,7 +8,7 @@ npm install
 
 # 2. Configurar variables de entorno
 cp .env.example .env
-# Edita .env con tu DATABASE_URL de Railway y los secrets JWT
+# Edita .env con tu DATABASE_URL de Docker y los secrets JWT
 
 # 3. Ejecutar migraciones (crea las tablas)
 npm run migrate
@@ -87,7 +87,7 @@ Body: { refresh_token }
 ## Variables de entorno requeridas
 
 ```env
-DATABASE_URL=           # PostgreSQL URL completa (Railway la provee)
+DATABASE_URL=           # PostgreSQL URL (Docker: postgresql://postgres:postgres@localhost:5432/pos_backend)
 JWT_SECRET=             # String aleatorio largo (mín. 64 chars)
 JWT_REFRESH_SECRET=     # String diferente al JWT_SECRET
 JWT_EXPIRES_IN=8h       # Duración del access token
@@ -98,12 +98,17 @@ NODE_ENV=production
 
 ---
 
-## Deploy en Railway
+## Deploy local con Docker Compose
 
-1. Conecta tu repositorio GitHub a Railway
-2. Agrega un servicio PostgreSQL en Railway
-3. Copia la `DATABASE_URL` de PostgreSQL al servicio del backend
-4. Agrega las variables de entorno en Railway → Settings → Variables
-5. Railway hace el deploy automáticamente en cada push a `main`
-6. Ejecuta las migraciones desde Railway CLI: `railway run npm run migrate`
-7. Ejecuta el seed: `railway run node src/migrations/seed.js`
+```bash
+# 1. Construir y arrancar
+docker compose up -d
+
+# 2. Ejecutar migraciones
+docker compose exec pos-backend node dist/migrations/run.js
+
+# 3. Sembrar datos demo
+docker compose exec pos-backend node dist/migrations/seed.js
+```
+
+Ver `docker-compose.yml` en la raíz del monorepo para configuración completa.

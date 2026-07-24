@@ -9,10 +9,12 @@ declare module 'express' {
       email: string;
       rol: string;
       sucursal_id: string;
+      establecimiento_id?: string | null;
       iat?: number;
       exp?: number;
     };
     requestId?: string;
     sucursalId?: string;
+    authMode?: string;
   }
 }

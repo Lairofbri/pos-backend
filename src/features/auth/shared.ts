@@ -14,36 +14,35 @@ const generarPayload = (usuario: Record<string, unknown>) => ({
   tenant_id: usuario.tenant_id as string,
   rol: usuario.rol as string,
   nombre: usuario.nombre as string,
+  email: (usuario.email as string) || null,
   sucursal_id: (usuario.sucursal_id as string) || null,
+  establecimiento_id: null,
 });
 
-const generarTokens = (usuario: Record<string, unknown>) => {
+const generarAccessToken = (usuario: Record<string, unknown>) => {
   const payload = generarPayload(usuario);
-  const accessToken = jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN } as jwt.SignOptions);
-  const refreshToken = jwt.sign(
-    { sub: usuario.id as string, tenant_id: usuario.tenant_id as string, jti: crypto.randomUUID() },
-    env.JWT_REFRESH_SECRET,
-    { expiresIn: env.JWT_REFRESH_EXPIRES_IN } as jwt.SignOptions
-  );
-  return { accessToken, refreshToken };
+  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN } as jwt.SignOptions);
 };
+
+const generarRefreshTokenOpaque = (): string =>
+  crypto.randomBytes(64).toString('hex');
 
 const hashRefreshToken = (token: string) =>
   crypto.createHash('sha256').update(token).digest('hex');
 
 const guardarRefreshToken = async (usuarioId: string, tenantId: string, refreshToken: string, dispositivo: string | null, ip: string | null) => {
   const tokenHash = hashRefreshToken(refreshToken);
-  const decoded = jwt.decode(refreshToken) as { exp: number };
-  const expiraEn = new Date(decoded.exp * 1000);
+  const expiraEn = new Date();
+  expiraEn.setDate(expiraEn.getDate() + 7);
   try {
     await query(
-      `INSERT INTO refresh_tokens (usuario_id, tenant_id, token_hash, dispositivo, ip_origen, expira_en)
-       VALUES ($1, $2, $3, $4, $5::inet, $6)`,
+      `INSERT INTO refresh_tokens (usuario_id, tenant_id, token_hash, activo, dispositivo, ip_origen, expira_en)
+       VALUES ($1, $2, $3, TRUE, $4, $5::inet, $6)`,
       [usuarioId, tenantId, tokenHash, dispositivo || null, ip || null, expiraEn]
     );
   } catch (err) {
     if ((err as { code?: string }).code === '23505') {
-      logger.warn('Refresh token duplicado (jti collision), reemplazando', { usuario_id: usuarioId });
+      logger.warn('Refresh token duplicado, reemplazando', { usuario_id: usuarioId });
       await query(
         `UPDATE refresh_tokens SET token_hash = $1, expira_en = $2, activo = TRUE
          WHERE usuario_id = $3 AND tenant_id = $4 AND activo = FALSE`,
@@ -100,7 +99,8 @@ export const loginEmail = async ({ email, password, tenantId, ip }: { email: str
     [usuario.id, usuario.tenant_id]
   );
 
-  const { accessToken, refreshToken } = generarTokens(usuario);
+  const accessToken = generarAccessToken(usuario);
+  const refreshToken = generarRefreshTokenOpaque();
   await guardarRefreshToken(usuario.id as string, usuario.tenant_id as string, refreshToken, null, ip || null);
 
   logger.info('Login email exitoso', { usuario_id: usuario.id as string, rol: usuario.rol as string });
@@ -200,7 +200,8 @@ const loginPinConUsuario = async ({ tenantId, usuarioId, pin, ip }: { tenantId: 
     [usuario.id, usuario.tenant_id]
   );
 
-  const { accessToken, refreshToken } = generarTokens(usuario);
+  const accessToken = generarAccessToken(usuario);
+  const refreshToken = generarRefreshTokenOpaque();
   await guardarRefreshToken(usuario.id as string, usuario.tenant_id as string, refreshToken, null, ip || null);
 
   logger.info('Login PIN exitoso', { usuario_id: usuario.id as string, rol: usuario.rol as string });
@@ -250,7 +251,8 @@ const loginPinPorPin = async ({ tenantId, pin, ip }: { tenantId: string; pin: st
     [usuario.id, usuario.tenant_id]
   );
 
-  const { accessToken, refreshToken } = generarTokens(usuario);
+  const accessToken = generarAccessToken(usuario);
+  const refreshToken = generarRefreshTokenOpaque();
   await guardarRefreshToken(usuario.id as string, usuario.tenant_id as string, refreshToken, null, ip || null);
 
   logger.info('Login PIN exitoso (por PIN)', { usuario_id: usuario.id as string, rol: usuario.rol as string });
@@ -264,36 +266,53 @@ const loginPinPorPin = async ({ tenantId, pin, ip }: { tenantId: string; pin: st
 };
 
 export const refreshAccessToken = async ({ refreshToken }: { refreshToken: string }) => {
-  try {
-    jwt.verify(refreshToken, env.JWT_REFRESH_SECRET);
-  } catch {
-    throw { status: 401, mensaje: 'Refresh token inválido o expirado.' };
-  }
-
   const tokenHash = hashRefreshToken(refreshToken);
+
   const { rows } = await query(
-    `SELECT rt.*, u.activo as usuario_activo, u.rol, u.nombre, u.apellido,
+    `SELECT rt.id, rt.activo, rt.expira_en, rt.tenant_id, rt.usuario_id, rt.dispositivo,
+            u.activo as usuario_activo, u.rol, u.nombre, u.apellido,
             u.email, u.sucursal_id, t.activo as tenant_activo
      FROM refresh_tokens rt
      JOIN usuarios u ON u.id = rt.usuario_id
      JOIN tenants  t ON t.id = rt.tenant_id
-     WHERE rt.token_hash = $1 AND rt.activo = TRUE AND rt.expira_en > NOW()`,
+     WHERE rt.token_hash = $1`,
     [tokenHash]
   );
 
   if (rows.length === 0) {
-    throw { status: 401, mensaje: 'Sesión inválida. Inicia sesión nuevamente.' };
+    throw { status: 401, mensaje: 'Refresh token inválido.' };
   }
 
   const sesion = rows[0] as Record<string, unknown>;
+
+  // ── REUSE DETECTION ──
+  if (!sesion.activo) {
+    logger.warn('REUSE DETECTED — refresh token ya rotado', {
+      usuario_id: sesion.usuario_id as string,
+    });
+    await query(
+      'UPDATE refresh_tokens SET activo = FALSE WHERE usuario_id = $1 AND tenant_id = $2 AND activo = TRUE',
+      [sesion.usuario_id as string, sesion.tenant_id as string]
+    );
+    throw { status: 401, mensaje: 'Sesión revocada por posible robo de token.' };
+  }
+
+  if (new Date(sesion.expira_en as string) <= new Date()) {
+    await query(
+      'UPDATE refresh_tokens SET activo = FALSE WHERE id = $1',
+      [sesion.id as string]
+    );
+    throw { status: 401, mensaje: 'Refresh token expirado.' };
+  }
 
   if (!sesion.usuario_activo || !sesion.tenant_activo) {
     throw { status: 403, mensaje: 'Cuenta inactiva.' };
   }
 
+  // Rotación: marcar token actual como inactivo
   await query(
-    'UPDATE refresh_tokens SET activo = FALSE WHERE token_hash = $1 AND tenant_id = $2',
-    [tokenHash, sesion.tenant_id as string]
+    'UPDATE refresh_tokens SET activo = FALSE WHERE id = $1',
+    [sesion.id as string]
   );
 
   const usuario = {
@@ -302,10 +321,12 @@ export const refreshAccessToken = async ({ refreshToken }: { refreshToken: strin
     rol: sesion.rol as string,
     nombre: sesion.nombre as string,
     apellido: sesion.apellido as string,
+    email: sesion.email as string,
     sucursal_id: sesion.sucursal_id as string,
   };
 
-  const { accessToken, refreshToken: nuevoRefreshToken } = generarTokens(usuario);
+  const accessToken = generarAccessToken(usuario);
+  const nuevoRefreshToken = generarRefreshTokenOpaque();
   await guardarRefreshToken(usuario.id, usuario.tenant_id, nuevoRefreshToken, sesion.dispositivo as string | null, null);
 
   return {

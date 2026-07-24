@@ -22,9 +22,18 @@ export const env = {
   DATABASE_URL: requerida('DATABASE_URL'),
   DB_SSL_REJECT_UNAUTHORIZED: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
 
-  JWT_SECRET: requerida('JWT_SECRET'),
-  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? '1h',
-  JWT_REFRESH_SECRET: requerida('JWT_REFRESH_SECRET'),
+  JWT_SECRET: (() => {
+    const secret = requerida('JWT_SECRET');
+    if (secret.length < 64) {
+      throw new Error(
+        '[POS-BACKEND] JWT_SECRET debe tener al menos 64 caracteres (256 bits mínimo).\n' +
+        'Genera uno con: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"'
+      );
+    }
+    return secret;
+  })(),
+  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? '15m',
+  JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? '', // Ya no requerido — migrado a opaque tokens
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
 
   CORS_ORIGINS: (process.env.CORS_ORIGINS ?? 'http://localhost:5173')

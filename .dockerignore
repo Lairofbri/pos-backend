@@ -10,3 +10,6 @@ AGENTS.md
 docs
 uploads
 scripts
+playwright-report/
+test-results/
+tests/.auth/
