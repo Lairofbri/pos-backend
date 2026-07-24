@@ -14,9 +14,7 @@ const COOKIE_OPTS = {
 };
 
 export async function handler(req: Request, res: Response) {
-  const cookieToken = req.cookies?.[REFRESH_COOKIE] as string | undefined;
-  const bodyToken = req.body?.refresh_token as string | undefined;
-  const refreshToken = cookieToken || bodyToken;
+  const refreshToken = req.cookies?.[REFRESH_COOKIE] as string | undefined;
 
   if (!refreshToken) {
     return error(res, 'Refresh token requerido.', 400);

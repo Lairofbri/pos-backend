@@ -1,10 +1,10 @@
 #!/bin/sh
 set -e
 
-echo "▶️ Ejecutando migraciones iniciales..."
+echo "?? Ejecutando migraciones iniciales..."
 node dist/migrations/run.js 2>&1 || true
 
-echo "▶️ Sembrando datos faltantes para migraciones..."
+echo "?? Sembrando datos faltantes para migraciones..."
 node -e "
 const { Pool } = require('pg');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -26,7 +26,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
         ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'Sucursal Principal', TRUE)
       ON CONFLICT (id) DO NOTHING
     \`);
-    console.log('  ✓ Datos base sembrados correctamente');
+    console.log('  ? Datos base sembrados correctamente');
   } catch (err) {
     console.log('  - No se pudo sembrar:', err.message);
   }
@@ -34,11 +34,11 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 })();
 " 2>&1
 
-echo "▶️ Re-ejecutando migraciones pendientes..."
+echo "?? Re-ejecutando migraciones pendientes..."
 node dist/migrations/run.js 2>&1 || true
 
-echo "▶️ Sembrando datos demo..."
-node dist/migrations/seed.js 2>/dev/null || echo "  ℹ️ Seed saltado (ya ejecutado o no disponible)"
+echo "?? Sembrando datos demo..."
+node dist/migrations/seed.js 2>&1 || echo "  ?? Seed saltado (ya ejecutado o no disponible)"
 
-echo "🚀 Iniciando servidor..."
+echo "?? Iniciando servidor..."
 exec "$@"
