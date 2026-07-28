@@ -30,6 +30,7 @@ export const actualizarCategoria = async ({ tenantId, categoriaId, datos }: { te
   if (datos.icono !== undefined) { campos.push(`icono = $${idx++}`); valores.push(datos.icono); }
   if (datos.color !== undefined) { campos.push(`color = $${idx++}`); valores.push(datos.color); }
   if (datos.activo !== undefined) { campos.push(`activo = $${idx++}`); valores.push(datos.activo); }
+  if (datos.modulo !== undefined) { campos.push(`modulo = $${idx++}`); valores.push(datos.modulo); }
 
   valores.push(categoriaId, tenantId);
 

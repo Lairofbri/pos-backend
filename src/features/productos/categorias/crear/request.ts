@@ -20,4 +20,5 @@ export const crearCategoriaSchema = Joi.object({
     .messages({
       'string.pattern.base': 'El color debe ser un valor hexadecimal válido. Ej: #FF5733',
     }),
+  modulo: Joi.string().valid('producto', 'receta', 'inventario').optional().default('producto'),
 });

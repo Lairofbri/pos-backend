@@ -2,7 +2,7 @@ import { query } from '../../../../shared/config/database.js';
 
 export const obtenerCategoria = async ({ tenantId, categoriaId }: { tenantId: string; categoriaId: string }) => {
   const { rows } = await query(
-    `SELECT c.id, c.parent_id, c.nombre, c.descripcion, c.orden, c.icono, c.color, c.activo, c.creado_en,
+    `SELECT c.id, c.parent_id, c.nombre, c.descripcion, c.orden, c.icono, c.color, c.activo, c.modulo, c.creado_en,
             (SELECT jsonb_agg(jsonb_build_object('id', h.id, 'nombre', h.nombre))
              FROM categorias h WHERE h.parent_id = c.id AND h.tenant_id = c.tenant_id
             ) AS hijos,

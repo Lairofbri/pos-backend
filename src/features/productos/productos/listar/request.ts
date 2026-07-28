@@ -5,6 +5,7 @@ export const filtrosProductosSchema = Joi.object({
   activo: Joi.boolean().optional(),
   busqueda: Joi.string().max(100).optional().allow(''),
   con_stock: Joi.boolean().optional(),
+  se_vende: Joi.boolean().optional(),
   pagina: Joi.number().integer().min(1).optional().default(1),
   limite: Joi.number().integer().min(1).max(100).optional().default(50),
 });

@@ -75,13 +75,6 @@ const agregarComboAOrden = async ({ tenantId, ordenId, usuarioId, datos, combo }
         ]
       );
 
-      if (c.tiene_stock) {
-        await client.query(
-          'UPDATE productos SET stock_actual = stock_actual - $1 WHERE id = $2 AND tenant_id = $3',
-          [cantidadTotal, c.producto_id, tenantId]
-        );
-      }
-
       itemsInsertados.push(rows[0] as Record<string, unknown>);
     }
 
@@ -135,7 +128,7 @@ export const agregarItem = async ({ tenantId, ordenId, usuarioId, datos }: { ten
   }
 
   const { rows: productoRows } = await query(
-    `SELECT id, nombre, precio, activo, tiene_stock, stock_actual
+    `SELECT id, nombre, precio, activo, tiene_stock, stock_actual, tiene_receta
      FROM productos WHERE id = $1 AND tenant_id = $2`,
     [(datos as Record<string, unknown>).producto_id, tenantId]
   );
@@ -150,7 +143,43 @@ export const agregarItem = async ({ tenantId, ordenId, usuarioId, datos }: { ten
     throw { status: 400, mensaje: `El producto "${producto.nombre}" no está disponible.` };
   }
 
-  if (producto.tiene_stock && (producto.stock_actual as number) < (datos.cantidad as number)) {
+  if (producto.tiene_receta) {
+    const { rows: ingredientes } = await query(
+      `SELECT ri.cantidad AS receta_cantidad, ri.unidad_medida_id,
+              p.id, p.nombre, p.stock_actual, p.unidad_medida_id AS prod_um_id,
+              p.tiene_stock,
+              u.factor AS receta_factor, u.categoria AS receta_categoria,
+              pu.factor AS prod_factor
+       FROM receta_ingredientes ri
+       JOIN productos p ON p.id = ri.ingrediente_id AND p.tenant_id = $1
+       JOIN unidades_medida u ON u.id = ri.unidad_medida_id
+       LEFT JOIN unidades_medida pu ON pu.id = p.unidad_medida_id
+       JOIN recetas r ON r.id = ri.receta_id
+       JOIN productos pp ON pp.id = r.producto_id AND pp.id = $2
+       WHERE ri.receta_id = (SELECT id FROM recetas WHERE producto_id = $2 AND tenant_id = $1)`,
+      [tenantId, (datos as Record<string, unknown>).producto_id]
+    );
+
+    const cantidadVendida = (datos.cantidad as number) || 1;
+
+    for (const ing of ingredientes as Array<Record<string, unknown>>) {
+      if (!(ing as { tiene_stock?: boolean }).tiene_stock) continue;
+
+      const recetaCantidad = Number(ing.receta_cantidad);
+      const recetaFactor = Number(ing.receta_factor);
+      const prodFactor = Number(ing.prod_factor || 1);
+      const qtyEnUnidadBase = recetaCantidad * recetaFactor;
+      const qtyEnStockUnit = prodFactor > 0 ? qtyEnUnidadBase / prodFactor : qtyEnUnidadBase;
+      const qtyNecesaria = (qtyEnStockUnit / 1) * cantidadVendida;
+
+      if (Number(ing.stock_actual) < qtyNecesaria) {
+        throw {
+          status: 400,
+          mensaje: `Stock insuficiente para "${ing.nombre}". Necesita ${qtyNecesaria}, hay ${ing.stock_actual}.`,
+        };
+      }
+    }
+  } else if (producto.tiene_stock && (producto.stock_actual as number) < (datos.cantidad as number)) {
     throw {
       status: 400,
       mensaje: `Stock insuficiente para "${producto.nombre}". Stock actual: ${producto.stock_actual}.`,
@@ -173,13 +202,6 @@ export const agregarItem = async ({ tenantId, ordenId, usuarioId, datos }: { ten
         datos.cantidad, subtotalItem, (datos.notas as string) || null, (datos.descuento_porcentaje as number) ?? 0,
       ]
     );
-
-    if (producto.tiene_stock) {
-      await client.query(
-        'UPDATE productos SET stock_actual = stock_actual - $1 WHERE id = $2 AND tenant_id = $3',
-        [datos.cantidad, producto.id, tenantId]
-      );
-    }
 
     const totales = await recalcularOrden(client, ordenId, tenantId);
 

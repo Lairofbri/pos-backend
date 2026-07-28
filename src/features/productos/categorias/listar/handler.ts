@@ -16,13 +16,14 @@ export const handler = async (req: Request, res: Response) => {
     const esAdmin = req.usuario!.rol === 'administrador';
     const soloActivas = !esAdmin || req.query.todas !== 'true';
     const esArbol = req.query.arbol === 'true';
+    const modulo = req.query.modulo as string | undefined;
 
     if (esArbol) {
-      const categorias = await listarArbolCategorias({ tenantId: req.usuario!.tenant_id, soloActivas });
+      const categorias = await listarArbolCategorias({ tenantId: req.usuario!.tenant_id, soloActivas, modulo });
       return exito(res, { categorias });
     }
 
-    const categorias = await listarCategorias({ tenantId: req.usuario!.tenant_id, soloActivas });
+    const categorias = await listarCategorias({ tenantId: req.usuario!.tenant_id, soloActivas, modulo });
     return exito(res, { categorias });
   } catch (err) {
     return manejarError(res, err);

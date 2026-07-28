@@ -23,6 +23,7 @@ export const actualizarProducto = async ({ tenantId, productoId, datos }: { tena
     'nombre', 'descripcion', 'precio', 'categoria_id',
     'imagen_url', 'tiene_stock', 'stock_actual', 'stock_minimo',
     'codigo', 'orden', 'activo',
+    'se_vende', 'tiene_receta', 'unidad_medida_id',
   ];
 
   for (const campo of camposPermitidos) {

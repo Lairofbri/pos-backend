@@ -3,13 +3,14 @@ import { logger } from '../../../../shared/utils/logger.js';
 import { validarCategoriaPadre, calcularNivelCategoria } from '../../shared.js';
 
 export const crearCategoria = async ({ tenantId, datos }: { tenantId: string; datos: Record<string, unknown> }) => {
-  const { nombre, descripcion, parent_id, orden, icono, color } = datos as {
+  const { nombre, descripcion, parent_id, orden, icono, color, modulo } = datos as {
     nombre: string;
     descripcion?: string;
     parent_id?: string;
     orden?: number;
     icono?: string;
     color?: string;
+    modulo?: string;
   };
 
   if (parent_id) {
@@ -21,10 +22,10 @@ export const crearCategoria = async ({ tenantId, datos }: { tenantId: string; da
   }
 
   const { rows } = await query(
-    `INSERT INTO categorias (tenant_id, nombre, descripcion, parent_id, orden, icono, color)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, parent_id, nombre, descripcion, orden, icono, color, activo, creado_en`,
-    [tenantId, nombre, descripcion || null, parent_id || null, orden ?? 0, icono || null, color || null]
+    `INSERT INTO categorias (tenant_id, nombre, descripcion, parent_id, orden, icono, color, modulo)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id, parent_id, nombre, descripcion, orden, icono, color, modulo, activo, creado_en`,
+    [tenantId, nombre, descripcion || null, parent_id || null, orden ?? 0, icono || null, color || null, modulo || 'producto']
   );
 
   logger.info('Categoría creada', { tenant_id: tenantId, nombre, parent_id: parent_id || null });

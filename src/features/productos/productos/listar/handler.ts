@@ -32,6 +32,7 @@ export const handler = async (req: Request, res: Response) => {
     ...req.query,
     activo: req.query.activo !== undefined ? req.query.activo === 'true' : undefined,
     con_stock: req.query.con_stock !== undefined ? req.query.con_stock === 'true' : undefined,
+    se_vende: req.query.se_vende !== undefined ? req.query.se_vende === 'true' : undefined,
     pagina: paginaRaw,
     limite: limiteRaw,
   });
