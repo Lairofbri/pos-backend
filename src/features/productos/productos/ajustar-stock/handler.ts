@@ -23,6 +23,7 @@ export const handler = async (req: Request, res: Response) => {
       cantidad: value.cantidad,
       tipo: value.tipo,
       motivo: value.motivo,
+      creadoPor: req.usuario!.id,
     });
     return exito(res, { producto }, 'Stock ajustado exitosamente.');
   } catch (err) {

@@ -8,10 +8,11 @@ export const crearProducto = async ({ tenantId, datos }: { tenantId: string; dat
     nombre, descripcion, precio, categoria_id,
     imagen_url, tiene_stock, stock_actual, stock_minimo,
     codigo, orden,
+    se_vende, tiene_receta, unidad_medida_id,
   } = datos as {
     nombre: string;
     descripcion?: string;
-    precio: number;
+    precio?: number;
     categoria_id?: string;
     imagen_url?: string;
     tiene_stock?: boolean;
@@ -19,6 +20,9 @@ export const crearProducto = async ({ tenantId, datos }: { tenantId: string; dat
     stock_minimo?: number;
     codigo?: string;
     orden?: number;
+    se_vende?: boolean;
+    tiene_receta?: boolean;
+    unidad_medida_id?: string;
   };
 
   if (categoria_id) {
@@ -32,24 +36,29 @@ export const crearProducto = async ({ tenantId, datos }: { tenantId: string; dat
   const { rows } = await query(
     `INSERT INTO productos
        (tenant_id, categoria_id, nombre, descripcion, precio,
-        imagen_url, tiene_stock, stock_actual, stock_minimo, codigo, orden)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        imagen_url, tiene_stock, stock_actual, stock_minimo,
+        codigo, orden, se_vende, tiene_receta, unidad_medida_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      RETURNING
        id, nombre, descripcion, precio, imagen_url,
        tiene_stock, stock_actual, stock_minimo,
-       codigo, activo, orden, categoria_id, creado_en`,
+       codigo, activo, orden, categoria_id,
+       se_vende, tiene_receta, unidad_medida_id, creado_en`,
     [
       tenantId,
       categoria_id || null,
       nombre,
       descripcion || null,
-      precio,
+      precio ?? 0,
       imagen_url || null,
       tiene_stock ?? false,
       stock_actual ?? 0,
       stock_minimo ?? 0,
       codigo || null,
       orden ?? 0,
+      se_vende ?? true,
+      tiene_receta ?? false,
+      unidad_medida_id || null,
     ]
   );
 

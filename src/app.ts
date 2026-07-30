@@ -26,6 +26,9 @@ import menusRoutes from './features/menus/routes.js';
 import permisosRoutes from './features/permisos/routes.js';
 import dteRoutes from './features/dte/routes.js';
 import adminRoutes from './features/admin/routes.js';
+import inventarioRoutes from './features/inventario/routes.js';
+import recetasRoutes from './features/recetas/routes.js';
+import unidadesMedidaRoutes from './features/unidades-medida/routes.js';
 
 const app = express();
 
@@ -151,6 +154,9 @@ apiV1.use(catalogosRoutes);
 apiV1.use(impresionRoutes);
 apiV1.use(dteRoutes);
 apiV1.use(adminRoutes);
+apiV1.use(inventarioRoutes);
+apiV1.use(recetasRoutes);
+apiV1.use(unidadesMedidaRoutes);
 
 app.use('/api/v1', apiV1);
 app.use('/api', apiV1);

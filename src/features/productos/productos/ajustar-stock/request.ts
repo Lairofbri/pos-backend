@@ -1,7 +1,7 @@
 import Joi from 'joi';
 
 export const ajustarStockSchema = Joi.object({
-  cantidad: Joi.number().integer().required().messages({
+  cantidad: Joi.number().min(0.0001).required().messages({
     'any.required': 'La cantidad es requerida.',
   }),
   tipo: Joi.string()

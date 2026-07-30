@@ -13,11 +13,17 @@ export const obtenerCatalogos = async ({ tenantId }: { tenantId: string }) => {
   const { rows } = await query('SELECT fn_catalogos($1) AS data', [tenantId]);
   const catalogos = (rows[0] as { data?: Record<string, unknown> })?.data || {};
 
+  const { rows: unidadesRows } = await query(
+    'SELECT id, nombre, abreviatura, categoria, factor FROM unidades_medida WHERE tenant_id = $1 AND activo = TRUE ORDER BY categoria, nombre',
+    [tenantId]
+  );
+
   return {
     roles: rolesArr,
     tipos_documento: (catalogos.tipos_documento as unknown[]) || [],
     metodos_pago: (catalogos.metodos_pago as unknown[]) || [],
     movimientos_tipo: (catalogos.movimientos_tipo as unknown[]) || [],
     origenes_orden: (catalogos.origenes_orden as unknown[]) || [],
+    unidades_medida: unidadesRows,
   };
 };

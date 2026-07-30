@@ -1,36 +1,45 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { query } from '../../../../shared/config/database.js';
 
-export const listarCategorias = async ({ tenantId, soloActivas = true }: { tenantId: string; soloActivas?: boolean }) => {
-  const condicion = soloActivas
-    ? 'WHERE tenant_id = $1 AND activo = TRUE'
-    : 'WHERE tenant_id = $1';
+export const listarCategorias = async ({ tenantId, soloActivas = true, modulo }: { tenantId: string; soloActivas?: boolean; modulo?: string }) => {
+  const condiciones = [`tenant_id = $1`];
+  const valores: unknown[] = [tenantId];
+
+  if (soloActivas) {
+    condiciones.push('activo = TRUE');
+  }
+
+  if (modulo) {
+    condiciones.push('modulo = $2');
+    valores.push(modulo);
+  }
 
   const { rows } = await query(
-    `SELECT id, parent_id, nombre, descripcion, orden, icono, color, activo, creado_en
+    `SELECT id, parent_id, nombre, descripcion, orden, icono, color, activo, modulo, creado_en
      FROM categorias
-     ${condicion}
-     ORDER BY orden ASC, nombre ASC`,
-    [tenantId]
+     WHERE ${condiciones.join(' AND ')}
+     ORDER BY modulo, orden ASC, nombre ASC`,
+    valores
   );
   return rows;
 };
 
-export const listarArbolCategorias = async ({ tenantId, soloActivas = true }: { tenantId: string; soloActivas?: boolean }) => {
+export const listarArbolCategorias = async ({ tenantId, soloActivas = true, modulo }: { tenantId: string; soloActivas?: boolean; modulo?: string }) => {
   const condicion = soloActivas ? 'FALSE' : 'TRUE';
+  const filtroModulo = modulo ? `AND modulo = '${modulo}'` : '';
 
   const { rows } = await query(
     `WITH RECURSIVE arbol AS (
-       SELECT id, parent_id, nombre, descripcion, orden, icono, color, activo, creado_en, 0 AS nivel
+       SELECT id, parent_id, nombre, descripcion, orden, icono, color, activo, modulo, creado_en, 0 AS nivel
        FROM categorias
-       WHERE tenant_id = $1 AND parent_id IS NULL AND (${condicion} OR activo = TRUE)
+       WHERE tenant_id = $1 AND parent_id IS NULL AND (${condicion} OR activo = TRUE) ${filtroModulo}
        UNION ALL
-       SELECT c.id, c.parent_id, c.nombre, c.descripcion, c.orden, c.icono, c.color, c.activo, c.creado_en, a.nivel + 1
+       SELECT c.id, c.parent_id, c.nombre, c.descripcion, c.orden, c.icono, c.color, c.activo, c.modulo, c.creado_en, a.nivel + 1
        FROM categorias c
        JOIN arbol a ON c.parent_id = a.id
-       WHERE c.tenant_id = $1 AND (${condicion} OR c.activo = TRUE) AND a.nivel < 3
+       WHERE c.tenant_id = $1 AND (${condicion} OR c.activo = TRUE) AND a.nivel < 3 ${filtroModulo}
      )
-     SELECT id, parent_id, nombre, descripcion, orden, icono, color, activo, creado_en, nivel
+     SELECT id, parent_id, nombre, descripcion, orden, icono, color, activo, modulo, creado_en, nivel
      FROM arbol
      ORDER BY nivel, orden ASC, nombre ASC`,
     [tenantId]

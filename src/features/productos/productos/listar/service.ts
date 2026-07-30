@@ -6,6 +6,9 @@ export const listarProductos = async ({ tenantId, filtros = {} }: { tenantId: st
     activo,
     busqueda,
     con_stock,
+    tiene_stock,
+    se_vende,
+    tiene_receta,
     pagina = 1,
     limite = 50,
   } = filtros as {
@@ -13,6 +16,9 @@ export const listarProductos = async ({ tenantId, filtros = {} }: { tenantId: st
     activo?: boolean;
     busqueda?: string;
     con_stock?: boolean;
+    tiene_stock?: boolean;
+    se_vende?: boolean;
+    tiene_receta?: boolean;
     pagina?: number;
     limite?: number;
   };
@@ -48,14 +54,30 @@ export const listarProductos = async ({ tenantId, filtros = {} }: { tenantId: st
     condiciones.push(`(p.tiene_stock = FALSE OR p.stock_actual > 0)`);
   }
 
+  if (tiene_stock !== undefined) {
+    condiciones.push(`p.tiene_stock = $${idx++}`);
+    valores.push(tiene_stock);
+  }
+
+  if (se_vende !== undefined) {
+    condiciones.push(`p.se_vende = $${idx++}`);
+    valores.push(se_vende);
+  }
+
+  if (tiene_receta !== undefined) {
+    condiciones.push(`p.tiene_receta = $${idx++}`);
+    valores.push(tiene_receta);
+  }
+
   const offset = (pagina - 1) * limite;
 
   const { rows } = await query(
     `${cte}SELECT
-       p.id, p.nombre, p.descripcion, p.precio,
-       p.imagen_url, p.tiene_stock, p.stock_actual, p.stock_minimo,
-       p.codigo, p.activo, p.orden, p.creado_en,
-       p.categoria_id,
+        p.id, p.nombre, p.descripcion, p.precio,
+        p.imagen_url, p.tiene_stock, p.stock_actual, p.stock_minimo,
+        p.codigo, p.activo, p.orden, p.creado_en,
+        p.se_vende, p.tiene_receta, p.unidad_medida_id,
+        p.categoria_id,
        c.nombre AS categoria_nombre,
        c.color AS categoria_color
      FROM productos p

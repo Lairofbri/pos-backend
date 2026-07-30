@@ -1,0 +1,28 @@
+import type { Request, Response } from 'express';
+import { exito, error, errorServidor } from '../../../shared/utils/response.js';
+import { logger } from '../../../shared/utils/logger.js';
+import { crearUnidadSchema } from './request.js';
+import { crearUnidad } from './service.js';
+
+const manejarError = (res: Response, err: unknown) => {
+  const e = err as { status?: number; mensaje?: string };
+  if (e.status && e.mensaje) return error(res, e.mensaje, e.status);
+  if ((err as { code?: string }).code === '23505') return error(res, 'Ya existe una unidad con esa abreviatura.', 409);
+  logger.error('Error al crear unidad de medida', { error: (err as Error).message });
+  return errorServidor(res);
+};
+
+export const handler = async (req: Request, res: Response) => {
+  const { error: validacionError, value } = crearUnidadSchema.validate(req.body);
+  if (validacionError) return error(res, validacionError.details[0].message, 400);
+
+  try {
+    const resultado = await crearUnidad({
+      tenantId: req.usuario!.tenant_id,
+      datos: value,
+    });
+    return exito(res, { unidad: resultado }, 'Unidad de medida creada.', 201);
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
