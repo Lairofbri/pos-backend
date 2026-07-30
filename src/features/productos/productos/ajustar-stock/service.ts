@@ -1,7 +1,7 @@
 import { getClient } from '../../../../shared/config/database.js';
 import { logger } from '../../../../shared/utils/logger.js';
 
-export const ajustarStock = async ({ tenantId, productoId, cantidad, tipo, motivo }: { tenantId: string; productoId: string; cantidad: number; tipo: string; motivo?: string }) => {
+export const ajustarStock = async ({ tenantId, productoId, cantidad, tipo, motivo, creadoPor }: { tenantId: string; productoId: string; cantidad: number; tipo: string; motivo?: string; creadoPor?: string }) => {
   const client = await getClient();
   try {
     await client.query('BEGIN');
@@ -43,7 +43,7 @@ export const ajustarStock = async ({ tenantId, productoId, cantidad, tipo, motiv
          (tenant_id, producto_id, tipo_movimiento, cantidad,
           stock_anterior, stock_posterior, motivo, creado_por)
        VALUES ($1, $2, 'ajuste', $3, $4, $5, $6, $7)`,
-      [tenantId, productoId, cantidad, stockAnterior, stockPosterior, motivo || null, null]
+       [tenantId, productoId, cantidad, stockAnterior, stockPosterior, motivo || null, creadoPor || null]
     );
 
     await client.query('COMMIT');

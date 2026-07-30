@@ -8,6 +8,7 @@ export const listarMovimientos = async ({
   filtros?: {
     producto_id?: string;
     tipo?: string;
+    sucursal_id?: string;
     desde?: string;
     hasta?: string;
     pagina?: number;
@@ -17,6 +18,7 @@ export const listarMovimientos = async ({
   const {
     producto_id,
     tipo,
+    sucursal_id,
     desde,
     hasta,
     pagina = 1,
@@ -35,6 +37,11 @@ export const listarMovimientos = async ({
   if (tipo) {
     condiciones.push(`m.tipo_movimiento = $${idx++}`);
     valores.push(tipo);
+  }
+
+  if (sucursal_id) {
+    condiciones.push(`m.sucursal_id = $${idx++}`);
+    valores.push(sucursal_id);
   }
 
   if (desde) {

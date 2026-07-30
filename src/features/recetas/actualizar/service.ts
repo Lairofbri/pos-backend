@@ -82,6 +82,29 @@ export const actualizarReceta = async ({
       await client.query('DELETE FROM receta_ingredientes WHERE receta_id = $1', [recetaId]);
 
       for (const ing of datos.ingredientes) {
+        const { rows: unidadRows } = await client.query(
+          `SELECT u.categoria AS u_categoria,
+                  p.unidad_medida_id AS p_um_id,
+                  (SELECT u2.categoria FROM unidades_medida u2 WHERE u2.id = p.unidad_medida_id) AS p_categoria
+           FROM unidades_medida u
+           JOIN productos p ON p.id = $1 AND p.tenant_id = $2
+           WHERE u.id = $3`,
+          [ing.ingrediente_id, tenantId, ing.unidad_medida_id]
+        );
+
+        if (unidadRows.length === 0) {
+          throw { status: 400, mensaje: 'Unidad de medida no válida.' };
+        }
+
+        const row = unidadRows[0] as { u_categoria: string; p_categoria: string | null };
+
+        if (row.p_categoria && row.u_categoria !== row.p_categoria) {
+          throw {
+            status: 400,
+            mensaje: `La unidad seleccionada (${row.u_categoria}) no es compatible con la unidad del ingrediente (${row.p_categoria}).`,
+          };
+        }
+
         await client.query(
           `INSERT INTO receta_ingredientes (receta_id, ingrediente_id, cantidad, unidad_medida_id, preparacion)
            VALUES ($1, $2, $3, $4, $5)`,

@@ -12,7 +12,7 @@ export const crearProducto = async ({ tenantId, datos }: { tenantId: string; dat
   } = datos as {
     nombre: string;
     descripcion?: string;
-    precio: number;
+    precio?: number;
     categoria_id?: string;
     imagen_url?: string;
     tiene_stock?: boolean;
@@ -49,7 +49,7 @@ export const crearProducto = async ({ tenantId, datos }: { tenantId: string; dat
       categoria_id || null,
       nombre,
       descripcion || null,
-      precio,
+      precio ?? 0,
       imagen_url || null,
       tiene_stock ?? false,
       stock_actual ?? 0,

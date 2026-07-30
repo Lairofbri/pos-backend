@@ -29,6 +29,9 @@ export const handler = async (req: Request, res: Response) => {
   if (req.query.tipo && !tiposValidos.includes(req.query.tipo as string)) {
     return error(res, `El parámetro tipo debe ser uno de: ${tiposValidos.join(', ')}.`, 400);
   }
+  if (req.query.sucursal_id && !esUuidValido(req.query.sucursal_id)) {
+    return error(res, 'El parámetro sucursal_id no tiene un formato UUID válido.', 400);
+  }
 
   try {
     const resultado = await listarMovimientos({
@@ -36,6 +39,7 @@ export const handler = async (req: Request, res: Response) => {
       filtros: {
         producto_id: req.query.producto_id as string | undefined,
         tipo: req.query.tipo as string | undefined,
+        sucursal_id: req.query.sucursal_id as string | undefined,
         desde: req.query.desde as string | undefined,
         hasta: req.query.hasta as string | undefined,
         pagina,

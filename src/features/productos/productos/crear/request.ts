@@ -6,9 +6,8 @@ export const crearProductoSchema = Joi.object({
     'any.required': 'El nombre del producto es requerido.',
   }),
   descripcion: Joi.string().max(500).optional().allow('', null),
-  precio: Joi.number().precision(2).min(0).required().messages({
+  precio: Joi.number().precision(2).min(0).optional().default(0).messages({
     'number.min': 'El precio no puede ser negativo.',
-    'any.required': 'El precio es requerido.',
   }),
   categoria_id: Joi.string().uuid().optional().allow(null).messages({
     'string.uuid': 'El ID de categoría no es válido.',

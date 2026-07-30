@@ -9,7 +9,7 @@ const REFRESH_COOKIE = 'refresh_token';
 const COOKIE_OPTS = {
   httpOnly: true,
   secure: env.ES_PRODUCCION,
-  sameSite: 'strict' as const,
+  sameSite: 'lax' as const,
   path: '/api/auth',
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
