@@ -3,10 +3,11 @@ import { query } from '../../../../shared/config/database.js';
 export const obtenerProducto = async ({ tenantId, productoId }: { tenantId: string; productoId: string }) => {
   const { rows } = await query(
     `SELECT
-       p.id, p.nombre, p.descripcion, p.precio,
+       p.id, p.nombre, p.descripcion, p.precio, p.precio_costo,
        p.imagen_url, p.tiene_stock, p.stock_actual, p.stock_minimo,
        p.codigo, p.activo, p.orden, p.creado_en,
-       p.categoria_id,
+       p.categoria_id, p.se_vende, p.tiene_receta, p.unidad_medida_id,
+       p.categoria_extras_id,
        c.nombre AS categoria_nombre,
        c.color AS categoria_color
      FROM productos p

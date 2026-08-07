@@ -60,6 +60,8 @@ const sembrarMenusTenant = async (tenantId) => {
     { id: '00000000-0000-4000-8000-000000000012', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Impresoras', icono: 'printer',       ruta: '/admin/impresoras',   orden: 7,  permiso_codigo: 'impresion.configurar' },
     { id: '00000000-0000-4000-8000-000000000014', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Inventario', icono: 'clipboard-list', ruta: '/admin/inventario',   orden: 8,  permiso_codigo: 'inventario.ver' },
     { id: '00000000-0000-4000-8000-000000000015', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Recetas',    icono: 'book-open',      ruta: '/admin/recetas',      orden: 9,  permiso_codigo: 'recetas.ver' },
+    { id: '00000000-0000-4000-8000-000000000016', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Rentabilidad', icono: 'trending-up',  ruta: '/admin/rentabilidad',        orden: 10, permiso_codigo: 'rentabilidad.ver' },
+    { id: '00000000-0000-4000-8000-000000000017', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Costos',      icono: 'dollar-sign', ruta: '/admin/reportes/costos', orden: 11, permiso_codigo: 'costos.ver' },
 
     // Hijos de Configuraciones
     { id: '00000000-0000-4000-8000-000000000011', parent_id: '00000000-0000-4000-8000-000000000010', titulo: 'Menú',           icono: 'menu',   ruta: '/configuraciones/menus', orden: 1, permiso_codigo: 'roles.configurar' },

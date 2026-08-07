@@ -13,6 +13,7 @@ import productosActualizar from './productos/actualizar/endpoint.js';
 import productosToggle from './productos/toggle/endpoint.js';
 import productosAjustarStock from './productos/ajustar-stock/endpoint.js';
 import productosDesactivar from './productos/desactivar/endpoint.js';
+import productosRentabilidad from './rentabilidad/endpoint.js';
 import imagenSubir from './imagen/subir/endpoint.js';
 import imagenEliminar from './imagen/eliminar/endpoint.js';
 
@@ -25,6 +26,7 @@ router.use(categoriasActualizar);
 router.use(categoriasDesactivar);
 router.use(productosStockBajo);
 router.use(productosListar);
+router.use(productosRentabilidad);
 router.use(productosObtener);
 router.use(productosCrear);
 router.use(productosActualizar);

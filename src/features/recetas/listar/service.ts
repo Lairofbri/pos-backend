@@ -32,7 +32,7 @@ export const listarRecetas = async ({
 
   const { rows } = await query(
     `SELECT
-       r.id, r.producto_id, r.rendimiento, r.instrucciones, r.creado_en,
+        r.id, r.producto_id, r.version, r.rendimiento, r.instrucciones, r.creado_en,
        p.nombre AS producto_nombre, p.precio,
        p.imagen_url, p.categoria_id,
        c.nombre AS categoria_nombre,
@@ -40,7 +40,7 @@ export const listarRecetas = async ({
      FROM recetas r
      JOIN productos p ON p.id = r.producto_id AND p.tenant_id = $1
      LEFT JOIN categorias c ON c.id = p.categoria_id
-     WHERE ${condiciones.join(' AND ')}
+     WHERE r.vigente_hasta IS NULL AND ${condiciones.join(' AND ')}
      ORDER BY p.nombre ASC
      LIMIT $${idx++} OFFSET $${idx}`,
     [...valores, limite, offset]
@@ -50,7 +50,7 @@ export const listarRecetas = async ({
     `SELECT COUNT(*) as total
      FROM recetas r
      JOIN productos p ON p.id = r.producto_id AND p.tenant_id = $1
-     WHERE ${condiciones.join(' AND ')}`,
+      WHERE r.vigente_hasta IS NULL AND ${condiciones.join(' AND ')}`,
     valores
   );
 

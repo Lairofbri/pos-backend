@@ -20,10 +20,11 @@ export const actualizarProducto = async ({ tenantId, productoId, datos }: { tena
   let idx = 1;
 
   const camposPermitidos = [
-    'nombre', 'descripcion', 'precio', 'categoria_id',
+    'nombre', 'descripcion', 'precio', 'precio_costo', 'categoria_id',
     'imagen_url', 'tiene_stock', 'stock_actual', 'stock_minimo',
     'codigo', 'orden', 'activo',
     'se_vende', 'tiene_receta', 'unidad_medida_id',
+    'categoria_extras_id',
   ];
 
   for (const campo of camposPermitidos) {
@@ -43,7 +44,7 @@ export const actualizarProducto = async ({ tenantId, productoId, datos }: { tena
     `UPDATE productos SET ${campos.join(', ')}
      WHERE id = $${idx++} AND tenant_id = $${idx}
      RETURNING
-       id, nombre, descripcion, precio, imagen_url,
+        id, nombre, descripcion, precio, precio_costo, imagen_url,
        tiene_stock, stock_actual, stock_minimo,
        codigo, activo, orden, categoria_id`,
     valores

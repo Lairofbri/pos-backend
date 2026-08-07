@@ -122,7 +122,9 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
     }
 
     const { rows: itemsAPagar } = await client.query(
-      `SELECT oi.producto_id, SUM(oi.cantidad)::INTEGER AS cantidad, p.tiene_receta, p.tiene_stock
+      `SELECT oi.producto_id, SUM(oi.cantidad)::INTEGER AS cantidad, p.tiene_receta, p.tiene_stock, MAX(oi.receta_version) AS receta_version, MAX(oi.modificaciones) AS modificaciones
+       FROM orden_items oi
+       FROM orden_items oi
        FROM orden_items oi
        JOIN productos p ON p.id = oi.producto_id AND p.tenant_id = $1
        WHERE oi.orden_id = $2
@@ -133,7 +135,8 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
       [tenantId, ordenId]
     );
 
-    for (const item of itemsAPagar as Array<{ producto_id: string; cantidad: number; tiene_receta: boolean; tiene_stock: boolean }>) {
+    for (const item of itemsAPagar as Array<{ producto_id: string; cantidad: number; tiene_receta: boolean; tiene_stock: boolean; receta_version: number | null; modificaciones: { sin?: string[]; extra?: Array<{ producto_id: string; cantidad: number; precio: number }> } | null }>) {
+      const sinIds = (item.modificaciones?.sin || []) as string[];
       if (item.tiene_receta) {
         const { rows: ingredientes } = await client.query(
           `SELECT ri.ingrediente_id, ri.cantidad AS receta_cantidad,
@@ -144,10 +147,11 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
                   pu.factor AS prod_factor
            FROM receta_ingredientes ri
            JOIN recetas r ON r.id = ri.receta_id AND r.producto_id = $1
+              ${item.receta_version ? 'AND r.version = $3' : 'AND r.vigente_hasta IS NULL'}
            JOIN productos p ON p.id = ri.ingrediente_id AND p.tenant_id = $2
            JOIN unidades_medida u ON u.id = ri.unidad_medida_id
            LEFT JOIN unidades_medida pu ON pu.id = p.unidad_medida_id`,
-          [item.producto_id, tenantId]
+          [item.producto_id, tenantId, ...(item.receta_version ? [item.receta_version] : [])]
         );
 
         for (const ing of ingredientes as Array<{
@@ -159,6 +163,7 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
           stock_actual: number;
           prod_factor: number | null;
         }>) {
+          if (sinIds.includes(ing.ingrediente_id)) continue;
           const recetaCantidad = Number(ing.receta_cantidad);
           const recetaFactor = Number(ing.receta_factor);
           const rendimiento = Number(ing.rendimiento) || 1;
@@ -184,6 +189,25 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
                 cantidad_input, unidad_input_id, unidad_medida_id)
              VALUES ($1, $2, $3, 'consumo', $4, $5, $6, 'orden', $7, $8, $4, $9, $10)`,
             [tenantId, null, ing.ingrediente_id, qtyAConsumir, stockAnterior, stockPosterior, ordenId, usuarioId, ing.unidad_medida_id, ing.unidad_medida_id]
+          );
+        }
+
+        for (const extra of (item.modificaciones?.extra || [])) {
+          const extraCantidad = extra.cantidad || 1;
+          const { rows: extProd } = await client.query(
+            `UPDATE productos SET stock_actual = stock_actual - $1
+             WHERE id = $2 AND tenant_id = $3
+             RETURNING stock_actual`,
+            [extraCantidad, extra.producto_id, tenantId]
+          );
+          const extStockPosterior = Number((extProd[0] as { stock_actual: number }).stock_actual);
+          const extStockAnterior = extStockPosterior + extraCantidad;
+          await client.query(
+            `INSERT INTO movimientos_inventario
+               (tenant_id, sucursal_id, producto_id, tipo_movimiento, cantidad,
+                stock_anterior, stock_posterior, referencia_tipo, referencia_id, creado_por)
+             VALUES ($1, $2, $3, 'consumo', $4, $5, $6, 'orden', $7, $8)`,
+            [tenantId, null, extra.producto_id, extraCantidad, extStockAnterior, extStockPosterior, ordenId, usuarioId]
           );
         }
       } else if (item.tiene_stock) {

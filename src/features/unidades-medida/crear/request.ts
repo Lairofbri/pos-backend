@@ -7,8 +7,8 @@ export const crearUnidadSchema = Joi.object({
   abreviatura: Joi.string().min(1).max(10).required().messages({
     'any.required': 'La abreviatura es requerida.',
   }),
-  categoria: Joi.string().valid('masa', 'volumen', 'unidad').required().messages({
-    'any.only': 'La categoría debe ser masa, volumen o unidad.',
+  categoria: Joi.string().valid('masa', 'volumen', 'unidad', 'cocina').required().messages({
+    'any.only': 'La categoría debe ser masa, volumen, unidad o cocina.',
     'any.required': 'La categoría es requerida.',
   }),
   factor: Joi.number().min(0.0001).required().messages({

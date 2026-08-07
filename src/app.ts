@@ -103,6 +103,7 @@ app.use('/api/v1/usuarios/pin-list', limitePinList);
 const limiteRefresh = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
+  skip: () => !ES_PRODUCCION,
   message: { ok: false, mensaje: 'Demasiadas solicitudes de refresh. Intenta más tarde.' },
 });
 app.use('/api/auth/refresh', limiteRefresh);

@@ -1,6 +1,7 @@
 import { query } from '../../../../shared/config/database.js';
 import { logger } from '../../../../shared/utils/logger.js';
 import { validarCategoriaPadre, calcularNivelCategoria } from '../../shared.js';
+import { MAX_NIVEL_CATEGORIAS } from '../../../../shared/utils/constants.js';
 
 export const crearCategoria = async ({ tenantId, datos }: { tenantId: string; datos: Record<string, unknown> }) => {
   const { nombre, descripcion, parent_id, orden, icono, color, modulo } = datos as {
@@ -16,7 +17,7 @@ export const crearCategoria = async ({ tenantId, datos }: { tenantId: string; da
   if (parent_id) {
     await validarCategoriaPadre({ tenantId, parentId: parent_id });
     const nivelPadre = await calcularNivelCategoria({ tenantId, categoriaId: parent_id });
-    if (nivelPadre >= 2) {
+    if (nivelPadre >= MAX_NIVEL_CATEGORIAS) {
       throw { status: 400, mensaje: 'Máximo 3 niveles de categorías. No se pueden crear subcategorías más profundas.' };
     }
   }

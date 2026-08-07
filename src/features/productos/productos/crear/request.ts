@@ -9,6 +9,7 @@ export const crearProductoSchema = Joi.object({
   precio: Joi.number().precision(2).min(0).optional().default(0).messages({
     'number.min': 'El precio no puede ser negativo.',
   }),
+  precio_costo: Joi.number().precision(2).min(0).optional().default(0),
   categoria_id: Joi.string().uuid().optional().allow(null).messages({
     'string.uuid': 'El ID de categoría no es válido.',
   }),
@@ -24,5 +25,8 @@ export const crearProductoSchema = Joi.object({
   tiene_receta: Joi.boolean().optional().default(false),
   unidad_medida_id: Joi.string().uuid().optional().allow(null).messages({
     'string.uuid': 'El ID de unidad de medida no es válido.',
+  }),
+  categoria_extras_id: Joi.string().uuid().optional().allow(null).messages({
+    'string.uuid': 'El ID de categoría de extras no es válido.',
   }),
 });

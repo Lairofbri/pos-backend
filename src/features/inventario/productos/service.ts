@@ -45,7 +45,8 @@ export const listarProductosInventario = async ({
 
   const { rows } = await query(
     `SELECT
-       p.id, p.nombre, p.descripcion, p.precio, p.imagen_url,
+       p.id, p.nombre, p.descripcion, p.precio, p.precio_costo, p.costo_promedio,
+       p.imagen_url,
        p.tiene_stock, p.stock_actual, p.stock_minimo,
        p.codigo, p.activo, p.orden, p.categoria_id,
        p.se_vende, p.tiene_receta, p.unidad_medida_id, p.creado_en,

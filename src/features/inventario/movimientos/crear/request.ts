@@ -17,4 +17,5 @@ export const crearMovimientoSchema = Joi.object({
     'string.uuid': 'La unidad de medida no es válida.',
   }),
   motivo: Joi.string().max(255).optional().allow('', null),
+  costo_unitario: Joi.number().precision(2).min(0).optional(),
 });

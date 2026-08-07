@@ -1,5 +1,6 @@
 import { query, getClient } from '../../../../shared/config/database.js';
 import { logger } from '../../../../shared/utils/logger.js';
+import { incrementarStock, fijarStock, descontarStock, convertirCantidad } from '../../stock-service.js';
 
 export const crearMovimiento = async ({
   tenantId,
@@ -16,95 +17,90 @@ export const crearMovimiento = async ({
     cantidad: number;
     unidad_medida_id?: string;
     motivo?: string;
+    costo_unitario?: number;
   };
 }) => {
-  const { producto_id, tipo, cantidad, unidad_medida_id, motivo } = datos;
+  const { producto_id, tipo, cantidad, unidad_medida_id, motivo, costo_unitario } = datos;
 
-  let cantidadBase = cantidad;
-  let cantidadInput: number | null = null;
-  let unidadInputId: string | null = null;
-  let unidadMedidaId: string | null = unidad_medida_id || null;
+  const { cantidadBase, cantidadInput, unidadInputId, unidadMedidaId } = await convertirCantidad({
+    productoId: producto_id,
+    tenantId,
+    cantidad,
+    unidadMedidaId: unidad_medida_id,
+  });
 
-  if (unidad_medida_id) {
-    const { rows: unidadRows } = await query(
-      `SELECT u.factor AS input_factor, u.categoria AS input_categoria,
-              p.unidad_medida_id AS prod_um_id,
-              pu.factor AS prod_factor
-       FROM unidades_medida u
-       JOIN productos p ON p.id = $1 AND p.tenant_id = $2
-       LEFT JOIN unidades_medida pu ON pu.id = p.unidad_medida_id
-       WHERE u.id = $3`,
-      [producto_id, tenantId, unidad_medida_id]
-    );
-
-    if (unidadRows.length > 0) {
-      const conv = unidadRows[0] as { input_factor: number; input_categoria: string; prod_um_id: string | null; prod_factor: number | null };
-      const inputFactor = Number(conv.input_factor);
-      const prodFactor = Number(conv.prod_factor || 1);
-      const qtyEnBase = cantidad * inputFactor;
-      cantidadBase = prodFactor > 0 ? qtyEnBase / prodFactor : qtyEnBase;
-      cantidadInput = cantidad;
-      unidadInputId = unidad_medida_id;
-      unidadMedidaId = conv.prod_um_id || unidad_medida_id;
-    }
+  if (tipo === 'consumo') {
+    throw { status: 400, mensaje: 'No se puede crear un movimiento de tipo consumo manualmente. El consumo se genera automáticamente al pagar.' };
   }
 
   const client = await getClient();
   try {
     await client.query('BEGIN');
 
-    const { rows: productoRows } = await client.query(
-      `SELECT id, tiene_stock, stock_actual
-       FROM productos
-       WHERE id = $1 AND tenant_id = $2
-       FOR UPDATE`,
-      [producto_id, tenantId]
-    );
-
-    if (productoRows.length === 0) {
-      throw { status: 404, mensaje: 'Producto no encontrado.' };
-    }
-
-    const producto = productoRows[0] as { id: string; tiene_stock: boolean; stock_actual: number };
-
-    if (!producto.tiene_stock) {
-      throw { status: 400, mensaje: 'Este producto no tiene control de inventario activado.' };
-    }
-
-    const stockAnterior = producto.stock_actual;
-    let stockPosterior: number;
+    let result: { stockAnterior: number; stockPosterior: number; movimientoId: string };
 
     switch (tipo) {
       case 'compra':
       case 'devolucion':
-        stockPosterior = stockAnterior + cantidadBase;
+        result = await incrementarStock({
+          tenantId, productoId: producto_id, cantidad: cantidadBase,
+          sucursalId, usuarioId, tipoMovimiento: tipo, motivo,
+          client,
+        });
         break;
       case 'merma':
-        stockPosterior = stockAnterior - cantidadBase;
+        result = await descontarStock({
+          tenantId, productoId: producto_id, cantidad: cantidadBase,
+          sucursalId, usuarioId, motivo,
+          client,
+        });
         break;
       case 'ajuste':
-        stockPosterior = cantidadBase;
+        result = await fijarStock({
+          tenantId, productoId: producto_id, nuevoStock: cantidadBase,
+          sucursalId, usuarioId, motivo,
+          client,
+        });
         break;
       default:
         throw { status: 400, mensaje: `Tipo de movimiento no válido: ${tipo}` };
     }
 
-    await client.query(
-      `UPDATE productos SET stock_actual = $1
-       WHERE id = $2 AND tenant_id = $3`,
-      [stockPosterior, producto_id, tenantId]
-    );
+    if (costo_unitario) {
+      await client.query(
+        'UPDATE movimientos_inventario SET costo_unitario = $1 WHERE id = $2',
+        [costo_unitario, result.movimientoId]
+      );
+    }
 
-    const { rows: movRows } = await client.query(
-      `INSERT INTO movimientos_inventario
-         (tenant_id, sucursal_id, producto_id, tipo_movimiento, cantidad,
-          stock_anterior, stock_posterior, motivo, creado_por,
-          cantidad_input, unidad_input_id, unidad_medida_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-       RETURNING id, tipo_movimiento, cantidad, stock_anterior, stock_posterior, motivo, creado_en`,
-      [tenantId, sucursalId, producto_id, tipo, cantidadBase, stockAnterior, stockPosterior, motivo || null, usuarioId,
-       cantidadInput, unidadInputId, unidadMedidaId]
-    );
+    if (tipo === 'compra' && costo_unitario && costo_unitario > 0) {
+      const { rows: [producto] } = await client.query(
+        'SELECT costo_promedio FROM productos WHERE id = $1 AND tenant_id = $2',
+        [producto_id, tenantId]
+      );
+      const costoAnterior = parseFloat(producto.costo_promedio);
+      const stockAntes = result.stockAnterior;
+
+      let nuevoPromedio: number;
+      if (stockAntes <= 0) {
+        nuevoPromedio = costo_unitario;
+      } else {
+        nuevoPromedio = ((stockAntes * costoAnterior) + (cantidadBase * costo_unitario))
+          / (stockAntes + cantidadBase);
+      }
+
+      await client.query(
+        'UPDATE productos SET costo_promedio = $1 WHERE id = $2',
+        [Math.round(nuevoPromedio * 100) / 100, producto_id]
+      );
+    }
+
+    if (unidadInputId || unidadMedidaId) {
+      await client.query(
+        'UPDATE movimientos_inventario SET cantidad_input = $1, unidad_input_id = $2, unidad_medida_id = $3 WHERE id = $4',
+        [cantidadInput, unidadInputId, unidadMedidaId, result.movimientoId]
+      );
+    }
 
     await client.query('COMMIT');
 
@@ -113,11 +109,19 @@ export const crearMovimiento = async ({
       tipo,
       cantidad: cantidadBase,
       cantidad_input: cantidadInput,
-      stock_anterior: stockAnterior,
-      stock_posterior: stockPosterior,
+      stock_anterior: result.stockAnterior,
+      stock_posterior: result.stockPosterior,
     });
 
-    return movRows[0];
+    return {
+      id: result.movimientoId,
+      tipo_movimiento: tipo,
+      cantidad: cantidadBase,
+      stock_anterior: result.stockAnterior,
+      stock_posterior: result.stockPosterior,
+      cantidad_input: cantidadInput,
+      creado_en: new Date().toISOString(),
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
