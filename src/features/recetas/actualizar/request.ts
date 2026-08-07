@@ -14,7 +14,7 @@ export const actualizarRecetaSchema = Joi.object({
     categoria_id: Joi.string().uuid().optional().allow(null),
     imagen_url: Joi.string().uri({ allowRelative: true }).max(1024).optional().allow('', null),
   }).optional(),
-  rendimiento: Joi.number().integer().min(1).optional(),
+  rendimiento: Joi.number().min(0.01).optional(),
   instrucciones: Joi.string().optional().allow('', null),
   ingredientes: Joi.array().items(ingredienteSchema).min(1).optional(),
 });

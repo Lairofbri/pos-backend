@@ -31,8 +31,8 @@ export const crearRecetaSchema = Joi.object({
     }),
     imagen_url: Joi.string().uri({ allowRelative: true }).max(1024).optional().allow('', null),
   }).required(),
-  rendimiento: Joi.number().integer().min(1).required().messages({
-    'number.min': 'El rendimiento debe ser al menos 1.',
+  rendimiento: Joi.number().min(0.01).required().messages({
+    'number.min': 'El rendimiento debe ser mayor a 0.',
     'any.required': 'El rendimiento es requerido.',
   }),
   instrucciones: Joi.string().optional().allow('', null),

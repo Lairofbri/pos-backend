@@ -13,18 +13,18 @@ const manejarError = (res: Response, err: unknown) => {
 
 export const handler = async (req: Request, res: Response) => {
   try {
-    const recetaId = await obtenerRecetaPorProducto({
+    const recetaData = await obtenerRecetaPorProducto({
       tenantId: req.usuario!.tenant_id,
       productoId: req.params.productoId as string,
     });
 
-    if (!recetaId) {
+    if (!recetaData) {
       return error(res, 'Este producto no tiene una receta asociada.', 404);
     }
 
     const receta = await obtenerReceta({
       tenantId: req.usuario!.tenant_id,
-      recetaId,
+      recetaId: recetaData.id,
     });
 
     return exito(res, receta);

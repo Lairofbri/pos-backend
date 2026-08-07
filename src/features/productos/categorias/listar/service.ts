@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { query } from '../../../../shared/config/database.js';
+import { MAX_NIVEL_CATEGORIAS } from '../../../../shared/utils/constants.js';
 
 export const listarCategorias = async ({ tenantId, soloActivas = true, modulo }: { tenantId: string; soloActivas?: boolean; modulo?: string }) => {
   const condiciones = [`tenant_id = $1`];
@@ -26,18 +27,19 @@ export const listarCategorias = async ({ tenantId, soloActivas = true, modulo }:
 
 export const listarArbolCategorias = async ({ tenantId, soloActivas = true, modulo }: { tenantId: string; soloActivas?: boolean; modulo?: string }) => {
   const condicion = soloActivas ? 'FALSE' : 'TRUE';
-  const filtroModulo = modulo ? `AND modulo = '${modulo}'` : '';
+  const filtroModuloBase = modulo ? `AND modulo = '${modulo}'` : '';
+  const filtroModuloRec = modulo ? `AND c.modulo = '${modulo}'` : '';
 
   const { rows } = await query(
     `WITH RECURSIVE arbol AS (
        SELECT id, parent_id, nombre, descripcion, orden, icono, color, activo, modulo, creado_en, 0 AS nivel
        FROM categorias
-       WHERE tenant_id = $1 AND parent_id IS NULL AND (${condicion} OR activo = TRUE) ${filtroModulo}
+       WHERE tenant_id = $1 AND parent_id IS NULL AND (${condicion} OR activo = TRUE) ${filtroModuloBase}
        UNION ALL
        SELECT c.id, c.parent_id, c.nombre, c.descripcion, c.orden, c.icono, c.color, c.activo, c.modulo, c.creado_en, a.nivel + 1
        FROM categorias c
        JOIN arbol a ON c.parent_id = a.id
-       WHERE c.tenant_id = $1 AND (${condicion} OR c.activo = TRUE) AND a.nivel < 3 ${filtroModulo}
+       WHERE c.tenant_id = $1 AND (${condicion} OR c.activo = TRUE) AND a.nivel < ${MAX_NIVEL_CATEGORIAS + 1} ${filtroModuloRec}
      )
      SELECT id, parent_id, nombre, descripcion, orden, icono, color, activo, modulo, creado_en, nivel
      FROM arbol

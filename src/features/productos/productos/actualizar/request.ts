@@ -4,6 +4,7 @@ export const actualizarProductoSchema = Joi.object({
   nombre: Joi.string().min(2).max(150).optional(),
   descripcion: Joi.string().max(500).optional().allow('', null),
   precio: Joi.number().precision(2).min(0).optional(),
+  precio_costo: Joi.number().precision(2).min(0).optional(),
   categoria_id: Joi.string().uuid().optional().allow(null),
   imagen_url: Joi.string().uri({ allowRelative: true }).max(1024).optional().allow('', null),
   tiene_stock: Joi.boolean().optional(),
@@ -15,4 +16,5 @@ export const actualizarProductoSchema = Joi.object({
   se_vende: Joi.boolean().optional(),
   tiene_receta: Joi.boolean().optional(),
   unidad_medida_id: Joi.string().uuid().optional().allow(null),
+  categoria_extras_id: Joi.string().uuid().optional().allow(null),
 }).min(1);

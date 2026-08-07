@@ -36,9 +36,9 @@ export const crearReceta = async ({
     const nuevoProducto = prodRows[0];
 
     const { rows: recetaRows } = await client.query(
-      `INSERT INTO recetas (tenant_id, producto_id, rendimiento, instrucciones)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, rendimiento, instrucciones, creado_en`,
+      `INSERT INTO recetas (tenant_id, producto_id, rendimiento, instrucciones, version, vigente_desde)
+       VALUES ($1, $2, $3, $4, 1, NOW())
+       RETURNING id, version, rendimiento, instrucciones, creado_en`,
       [tenantId, nuevoProducto.id, rendimiento, instrucciones || null]
     );
 
@@ -61,7 +61,13 @@ export const crearReceta = async ({
 
       const row = unidadRows[0] as { u_categoria: string; p_categoria: string | null };
 
-      if (row.p_categoria && row.u_categoria !== row.p_categoria) {
+      const categoriasCompatibles =
+        !row.p_categoria ||
+        row.u_categoria === row.p_categoria ||
+        row.u_categoria === 'cocina' ||
+        row.p_categoria === 'cocina';
+
+      if (!categoriasCompatibles) {
         throw {
           status: 400,
           mensaje: `La unidad seleccionada (${row.u_categoria}) no es compatible con la unidad del ingrediente (${row.p_categoria}).`,
@@ -97,6 +103,7 @@ export const crearReceta = async ({
     return {
       id: nuevaReceta.id,
       producto: nuevoProducto,
+      version: nuevaReceta.version,
       rendimiento: nuevaReceta.rendimiento,
       instrucciones: nuevaReceta.instrucciones,
       creado_en: nuevaReceta.creado_en,

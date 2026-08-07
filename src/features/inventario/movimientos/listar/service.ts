@@ -62,6 +62,8 @@ export const listarMovimientos = async ({
        m.stock_anterior, m.stock_posterior, m.motivo,
        m.referencia_tipo, m.referencia_id, m.creado_en,
        m.unidad_medida_id, m.cantidad_input, m.unidad_input_id,
+       m.movimiento_revertido_id, m.revertido_en,
+       m.costo_unitario,
        un.nombre AS unidad_nombre, un.abreviatura AS unidad_abrev,
        p.nombre AS producto_nombre,
        uu.nombre AS creado_por_nombre,

@@ -10,9 +10,7 @@ export const crearCategoriaSchema = Joi.object({
     'string.uuid': 'El ID de categoría padre no es válido.',
   }),
   orden: Joi.number().integer().min(0).optional().default(0),
-  icono: Joi.string().max(10).optional().allow('', null).messages({
-    'string.max': 'El icono no debe exceder 10 caracteres.',
-  }),
+  icono: Joi.string().max(50).optional().allow('', null),
   color: Joi.string()
     .pattern(/^#[0-9A-Fa-f]{6}$/)
     .optional()

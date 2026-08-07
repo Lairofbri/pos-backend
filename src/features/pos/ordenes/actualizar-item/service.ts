@@ -27,7 +27,7 @@ export const actualizarItem = async ({ tenantId, ordenId, itemId, usuarioId, dat
     const valores: unknown[] = [];
     let idx = 1;
 
-    const d = datos as { cantidad?: number; notas?: string; estado?: string; descuento_porcentaje?: number };
+    const d = datos as { cantidad?: number; notas?: string; estado?: string; descuento_porcentaje?: number; modificaciones?: { sin?: string[]; extra?: { producto_id: string; cantidad: number; precio: number }[]; notas_extra?: string } };
 
     if (d.cantidad !== undefined && d.cantidad !== itemActual.cantidad) {
       const diferencia = d.cantidad - (itemActual.cantidad as number);
@@ -66,6 +66,57 @@ export const actualizarItem = async ({ tenantId, ordenId, itemId, usuarioId, dat
       }
     }
     if (d.descuento_porcentaje !== undefined) { campos.push(`descuento_porcentaje = $${idx++}`); valores.push(d.descuento_porcentaje); }
+
+    if (d.modificaciones) {
+      if (d.modificaciones.extra?.length) {
+        for (const ext of d.modificaciones.extra) {
+          const { rows: extRows } = await client.query(
+            'SELECT id, nombre, activo FROM productos WHERE id = $1 AND tenant_id = $2',
+            [ext.producto_id, tenantId]
+          );
+          if (extRows.length === 0) throw { status: 400, mensaje: `El extra "${ext.producto_id}" no existe.` };
+        }
+      }
+
+      const partesNotas: string[] = [];
+      if (d.modificaciones.sin?.length) {
+        const { rows: ingNombres } = await client.query(
+          'SELECT nombre FROM productos WHERE id = ANY($1) AND tenant_id = $2',
+          [d.modificaciones.sin, tenantId]
+        );
+        const nombres = (ingNombres as Array<{ nombre: string }>).map(r => r.nombre);
+        partesNotas.push(nombres.map(n => `Sin ${n}`).join(', '));
+      }
+      if (d.modificaciones.extra?.length) {
+        const { rows: extNombres } = await client.query(
+          'SELECT nombre FROM productos WHERE id = ANY($1) AND tenant_id = $2',
+          [d.modificaciones.extra.map(e => e.producto_id), tenantId]
+        );
+        const nombres = (extNombres as Array<{ nombre: string }>).map(r => r.nombre);
+        partesNotas.push('+ ' + nombres.join(', + '));
+      }
+      if (d.modificaciones.notas_extra) {
+        partesNotas.push(d.modificaciones.notas_extra);
+      }
+
+      const notasGeneradas = partesNotas.join('. ') || null;
+
+      campos.push(`modificaciones = $${idx++}`);
+      valores.push(JSON.stringify(d.modificaciones));
+
+      if (d.notas === undefined && notasGeneradas) {
+        campos.push(`notas = $${idx++}`);
+        valores.push(notasGeneradas);
+      }
+
+      if (d.modificaciones.extra?.length) {
+        const extrasTotal = d.modificaciones.extra.reduce((sum, e) => sum + (e.precio || 0) * (e.cantidad || 1), 0);
+        const cantidadActual = d.cantidad ?? (itemActual.cantidad as number);
+        const nuevoSubtotal = Number(((itemActual.precio_unitario as number) * cantidadActual + extrasTotal).toFixed(2));
+        campos.push(`subtotal = $${idx++}`);
+        valores.push(nuevoSubtotal);
+      }
+    }
 
     if (campos.length > 0) {
       valores.push(itemId, tenantId);

@@ -12,4 +12,13 @@ export const actualizarItemSchema = Joi.object({
       'any.only': 'Estado de item inválido.',
     }),
   descuento_porcentaje: Joi.number().min(0).max(100).optional(),
+  modificaciones: Joi.object({
+    sin: Joi.array().items(Joi.string().uuid()).optional(),
+    extra: Joi.array().items(Joi.object({
+      producto_id: Joi.string().uuid().required(),
+      cantidad: Joi.number().integer().min(1).default(1),
+      precio: Joi.number().min(0).required(),
+    })).optional(),
+    notas_extra: Joi.string().max(255).optional().allow('', null),
+  }).optional(),
 }).min(1);

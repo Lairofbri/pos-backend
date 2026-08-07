@@ -138,6 +138,7 @@ export const agregarItem = async ({ tenantId, ordenId, usuarioId, datos }: { ten
   }
 
   const producto = (productoRows as Array<Record<string, unknown>>)[0];
+  let recetaVersion: number | undefined;
 
   if (!producto.activo) {
     throw { status: 400, mensaje: `El producto "${producto.nombre}" no está disponible.` };
@@ -156,11 +157,12 @@ export const agregarItem = async ({ tenantId, ordenId, usuarioId, datos }: { ten
        LEFT JOIN unidades_medida pu ON pu.id = p.unidad_medida_id
        JOIN recetas r ON r.id = ri.receta_id
        JOIN productos pp ON pp.id = r.producto_id AND pp.id = $2
-       WHERE ri.receta_id = (SELECT id FROM recetas WHERE producto_id = $2 AND tenant_id = $1)`,
+       WHERE ri.receta_id = (SELECT id FROM recetas WHERE producto_id = $2 AND tenant_id = $1 AND vigente_hasta IS NULL)`,
       [tenantId, (datos as Record<string, unknown>).producto_id]
     );
 
     const cantidadVendida = (datos.cantidad as number) || 1;
+    recetaVersion = ingredientes.length > 0 ? (ingredientes[0] as { receta_version: number }).receta_version : undefined;
 
     for (const ing of ingredientes as Array<Record<string, unknown>>) {
       if (!(ing as { tiene_stock?: boolean }).tiene_stock) continue;
@@ -194,12 +196,13 @@ export const agregarItem = async ({ tenantId, ordenId, usuarioId, datos }: { ten
 
     const { rows } = await client.query(
       `INSERT INTO orden_items
-         (orden_id, tenant_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, notas, descuento_porcentaje)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         (orden_id, tenant_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, notas, descuento_porcentaje, receta_version)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, descuento_porcentaje, estado, notas`,
       [
         ordenId, tenantId, producto.id, producto.nombre, producto.precio,
         datos.cantidad, subtotalItem, (datos.notas as string) || null, (datos.descuento_porcentaje as number) ?? 0,
+        recetaVersion || null,
       ]
     );
 
