@@ -12,4 +12,8 @@ export const actualizarOrdenSchema = Joi.object({
     .valid('pos', 'hugo', 'pedidosya', 'ubereats', 'whatsapp', 'telefono', 'otro')
     .optional(),
   numero_externo: Joi.string().max(50).optional().allow('', null),
+  num_personas: Joi.number().integer().min(1).optional().messages({
+    'number.min': 'El número de personas debe ser al menos 1.',
+  }),
+  cliente_id: Joi.string().uuid().optional().allow(null),
 }).min(1);

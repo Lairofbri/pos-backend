@@ -63,30 +63,10 @@ CREATE INDEX IF NOT EXISTS idx_movimientos_sesion
 -- NOTA: sesiones usa los permisos inventario.gestionar (crear, cerrar, conteo) e inventario.ver (listar, detalle) existentes.
 -- No se crean nuevos permisos. Si inventario.gestionar no existe, se crea aquí:
 
-INSERT INTO permisos (id, tenant_id, codigo, nombre, descripcion, modulo, activo)
-SELECT
-    gen_random_uuid(),
-    t.id,
-    'inventario.gestionar',
-    'Gestionar inventario',
-    'Registrar movimientos, conteos y sesiones de inventario',
-    'inventario',
-    TRUE
-FROM tenants t
-WHERE NOT EXISTS (
-    SELECT 1 FROM permisos p WHERE p.tenant_id = t.id AND p.codigo = 'inventario.gestionar'
-);
+INSERT INTO permisos (id, codigo, nombre, descripcion, modulo)
+SELECT gen_random_uuid(), 'inventario.gestionar', 'Gestionar inventario', 'Registrar movimientos, conteos y sesiones de inventario', 'inventario'
+WHERE NOT EXISTS (SELECT 1 FROM permisos WHERE codigo = 'inventario.gestionar');
 
-INSERT INTO permisos (id, tenant_id, codigo, nombre, descripcion, modulo, activo)
-SELECT
-    gen_random_uuid(),
-    t.id,
-    'inventario.ver',
-    'Ver inventario',
-    'Ver resumen, movimientos, sesiones y kardex de inventario',
-    'inventario',
-    TRUE
-FROM tenants t
-WHERE NOT EXISTS (
-    SELECT 1 FROM permisos p WHERE p.tenant_id = t.id AND p.codigo = 'inventario.ver'
-);
+INSERT INTO permisos (id, codigo, nombre, descripcion, modulo)
+SELECT gen_random_uuid(), 'inventario.ver', 'Ver inventario', 'Ver resumen, movimientos, sesiones y kardex de inventario', 'inventario'
+WHERE NOT EXISTS (SELECT 1 FROM permisos WHERE codigo = 'inventario.ver');

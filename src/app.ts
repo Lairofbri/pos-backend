@@ -29,6 +29,7 @@ import adminRoutes from './features/admin/routes.js';
 import inventarioRoutes from './features/inventario/routes.js';
 import recetasRoutes from './features/recetas/routes.js';
 import unidadesMedidaRoutes from './features/unidades-medida/routes.js';
+import cuentasRoutes from './features/cuentas/routes.js';
 
 const app = express();
 
@@ -158,6 +159,7 @@ apiV1.use(adminRoutes);
 apiV1.use(inventarioRoutes);
 apiV1.use(recetasRoutes);
 apiV1.use(unidadesMedidaRoutes);
+apiV1.use(cuentasRoutes);
 
 app.use('/api/v1', apiV1);
 app.use('/api', apiV1);

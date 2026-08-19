@@ -7,6 +7,7 @@ export async function handler(req: Request, res: Response) {
   try {
     const catalogos = await obtenerCatalogos({
       tenantId: req.usuario!.tenant_id,
+      depto: req.query.depto as string | undefined,
     });
     return exito(res, catalogos);
   } catch (err) {

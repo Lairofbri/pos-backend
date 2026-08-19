@@ -8,7 +8,6 @@ dist
 npm-debug.log*
 AGENTS.md
 docs
-uploads
 scripts
 playwright-report/
 test-results/

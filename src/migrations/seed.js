@@ -46,6 +46,7 @@ const sembrarMenusTenant = async (tenantId) => {
     // Raíces
     { id: '00000000-0000-4000-8000-000000000001', parent_id: null, titulo: 'POS',             icono: 'shopping-cart', ruta: '/pos',                orden: 1, permiso_codigo: 'ordenes.ver' },
     { id: '00000000-0000-4000-8000-000000000002', parent_id: null, titulo: 'Cocina',          icono: 'chef-hat',      ruta: '/cocina',             orden: 2, permiso_codigo: 'items.estado' },
+    { id: '00000000-0000-4000-8000-000000000019', parent_id: null, titulo: 'Dashboard',      icono: 'layout-dashboard', ruta: '/dashboard',         orden: 3, permiso_codigo: null },
     { id: '00000000-0000-4000-8000-000000000003', parent_id: null, titulo: 'Administración',  icono: 'user-cog',      ruta: null,                   orden: 3, permiso_codigo: null },
     { id: 'cc306641-6ab2-4bfa-814f-528c4cbe2a65', parent_id: null, titulo: 'Principal',      icono: 'utensils',      ruta: null,                   orden: 1, permiso_codigo: null },
     { id: '00000000-0000-4000-8000-000000000010', parent_id: null, titulo: 'Configuraciones', icono: 'settings',      ruta: null,                   orden: 4, permiso_codigo: null },
@@ -62,6 +63,7 @@ const sembrarMenusTenant = async (tenantId) => {
     { id: '00000000-0000-4000-8000-000000000015', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Recetas',    icono: 'book-open',      ruta: '/admin/recetas',      orden: 9,  permiso_codigo: 'recetas.ver' },
     { id: '00000000-0000-4000-8000-000000000016', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Rentabilidad', icono: 'trending-up',  ruta: '/admin/rentabilidad',        orden: 10, permiso_codigo: 'rentabilidad.ver' },
     { id: '00000000-0000-4000-8000-000000000017', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Costos',      icono: 'dollar-sign', ruta: '/admin/reportes/costos', orden: 11, permiso_codigo: 'costos.ver' },
+    { id: '00000000-0000-4000-8000-000000000018', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Cuentas',     icono: 'receipt',     ruta: '/admin/cuentas',         orden: 12, permiso_codigo: 'ordenes.ver' },
 
     // Hijos de Configuraciones
     { id: '00000000-0000-4000-8000-000000000011', parent_id: '00000000-0000-4000-8000-000000000010', titulo: 'Menú',           icono: 'menu',   ruta: '/configuraciones/menus', orden: 1, permiso_codigo: 'roles.configurar' },

@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { exito, error, errorServidor } from '../../../../shared/utils/response.js';
+import { error, errorServidor } from '../../../../shared/utils/response.js';
 import { logger } from '../../../../shared/utils/logger.js';
 import { esUuidValido } from '../../../../shared/middlewares/uuid.middleware.js';
 import { query } from '../../../../shared/config/database.js';
