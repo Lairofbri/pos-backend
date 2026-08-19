@@ -12,8 +12,12 @@ export const verificarCuadre = async ({ tenantId, datos }: { tenantId: string; d
 
   return {
     cuadra: diferencia === 0,
+    diferencia,
+    total_esperado: caja.total_esperado,
     mensaje: diferencia === 0
-      ? 'El monto ingresado coincide con el esperado.'
-      : 'El monto no coincide. Solicite revisión de un superior.',
+      ? 'La caja cuadra. El monto contado coincide con el esperado.'
+      : diferencia > 0
+        ? `Sobran $${diferencia.toFixed(2)} respecto al total esperado.`
+        : `Faltan $${Math.abs(diferencia).toFixed(2)} para cuadrar con el total esperado.`,
   };
 };

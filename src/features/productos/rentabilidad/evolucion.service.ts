@@ -9,6 +9,27 @@ interface EvolucionRow {
   ordenes: number;
 }
 
+interface CostoDiarioRow {
+  producto_id: string;
+  tiene_receta: boolean;
+  costo_promedio: number;
+  total_cantidad: string;
+  fecha: string;
+}
+
+interface IngredienteCostoRow {
+  costo_promedio: number;
+  cantidad: number;
+  factor_base: number;
+  factor_ingrediente: number;
+}
+
+interface HistoricoRow {
+  fecha: string;
+  ingresos: string;
+  ordenes: number;
+}
+
 export const obtenerEvolucion = async ({
   tenantId,
   filtros = {},
@@ -57,12 +78,12 @@ export const obtenerEvolucion = async ({
 
   const costoPorProducto = new Map<string, number>();
 
-  for (const row of costosDiarios as any[]) {
+  for (const row of costosDiarios as unknown as CostoDiarioRow[]) {
     const prodId = row.producto_id;
     if (costoPorProducto.has(prodId)) continue;
 
     const tieneReceta = row.tiene_receta;
-    const costoPromedio = parseFloat(row.costo_promedio);
+    const costoPromedio = Number(row.costo_promedio);
 
     if (!tieneReceta || costoPromedio > 0) {
       costoPorProducto.set(prodId, costoPromedio);
@@ -83,7 +104,7 @@ export const obtenerEvolucion = async ({
     }
 
     const receta = recetasRows[0] as { id: string; rendimiento: number };
-    const rendimiento = parseFloat(receta.rendimiento as any) || 1;
+    const rendimiento = Number(receta.rendimiento) || 1;
 
     const { rows: ingredientes } = await query(
       `SELECT
@@ -104,8 +125,8 @@ export const obtenerEvolucion = async ({
       continue;
     }
 
-    const todosConCosto = (ingredientes as any[]).every(
-      (i) => parseFloat(i.costo_promedio) > 0,
+    const todosConCosto = (ingredientes as unknown as IngredienteCostoRow[]).every(
+      (i) => Number(i.costo_promedio) > 0,
     );
 
     if (!todosConCosto) {
@@ -113,10 +134,10 @@ export const obtenerEvolucion = async ({
       continue;
     }
 
-    const costoTotal = (ingredientes as any[]).reduce((sum: number, ing: any) => {
-      const factorConversion = parseFloat(ing.factor_ingrediente) / parseFloat(ing.factor_base);
-      const cantidadBase = parseFloat(ing.cantidad) * factorConversion;
-      return sum + cantidadBase * parseFloat(ing.costo_promedio);
+    const costoTotal = (ingredientes as unknown as IngredienteCostoRow[]).reduce((sum, ing) => {
+      const factorConversion = Number(ing.factor_ingrediente) / Number(ing.factor_base);
+      const cantidadBase = Number(ing.cantidad) * factorConversion;
+      return sum + cantidadBase * Number(ing.costo_promedio);
     }, 0);
 
     const costoPorPorcion = Math.round((costoTotal / rendimiento) * 100) / 100;
@@ -124,7 +145,7 @@ export const obtenerEvolucion = async ({
   }
 
   const costoDiarioMap = new Map<string, number>();
-  for (const row of costosDiarios as any[]) {
+  for (const row of costosDiarios as unknown as CostoDiarioRow[]) {
     const fecha = row.fecha as string;
     const prodId = row.producto_id;
     const cantidad = parseFloat(row.total_cantidad);
@@ -133,7 +154,7 @@ export const obtenerEvolucion = async ({
     costoDiarioMap.set(fechaKey, (costoDiarioMap.get(fechaKey) || 0) + cantidad * costo);
   }
 
-  return (historico as any[]).map((row) => {
+  return (historico as unknown as HistoricoRow[]).map((row) => {
     const ingresos = parseFloat(row.ingresos);
     const costo = Math.round((costoDiarioMap.get(row.fecha) || 0) * 100) / 100;
     const margen = Math.round((ingresos - costo) * 100) / 100;

@@ -24,6 +24,8 @@ export const actualizarOrden = async ({ tenantId, ordenId, datos }: { tenantId: 
       propina_monto?: number;
       origen?: string;
       numero_externo?: string;
+      num_personas?: number;
+      cliente_id?: string | null;
     };
 
     if (d.notas !== undefined) { campos.push(`notas = $${idx++}`); valores.push(d.notas); }
@@ -32,6 +34,8 @@ export const actualizarOrden = async ({ tenantId, ordenId, datos }: { tenantId: 
     if (d.propina_monto !== undefined) { campos.push(`propina_monto = $${idx++}`); valores.push(d.propina_monto); }
     if (d.origen !== undefined) { campos.push(`origen = $${idx++}`); valores.push(d.origen); }
     if (d.numero_externo !== undefined) { campos.push(`numero_externo = $${idx++}`); valores.push(d.numero_externo); }
+    if (d.num_personas !== undefined) { campos.push(`num_personas = $${idx++}`); valores.push(d.num_personas); }
+    if (d.cliente_id !== undefined) { campos.push(`cliente_id = $${idx++}`); valores.push(d.cliente_id); }
 
     if (campos.length > 0) {
       valores.push(ordenId, tenantId);

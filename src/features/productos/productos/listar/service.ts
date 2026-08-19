@@ -73,7 +73,7 @@ export const listarProductos = async ({ tenantId, filtros = {} }: { tenantId: st
 
   const { rows } = await query(
     `${cte}SELECT
-        p.id, p.nombre, p.descripcion, p.precio, p.precio_costo,
+        p.id, p.nombre, p.descripcion, p.precio, p.precio_costo, p.costo_promedio,
         p.imagen_url, p.tiene_stock, p.stock_actual, p.stock_minimo,
         p.codigo, p.activo, p.orden, p.creado_en,
         p.se_vende, p.tiene_receta, p.unidad_medida_id, p.categoria_extras_id,

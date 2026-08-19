@@ -2,7 +2,7 @@ import { query } from '../../../shared/config/database.js';
 import { obtenerClientePorTenant } from '../../../shared/dte-client.js';
 import { logger } from '../../../shared/utils/logger.js';
 
-export const anular = async ({ tenantId, usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
+export const anular = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
   const payload = {
     codigo_generacion: datos.codigo_generacion,
     tipo_dte: datos.tipo_dte,
@@ -17,8 +17,7 @@ export const anular = async ({ tenantId, usuarioId, datos }: { tenantId: string;
   logger.info('Anulando DTE desde POS', { codigo_generacion: datos.codigo_generacion });
 
   const cliente = await obtenerClientePorTenant(tenantId);
-  const resp = await cliente.post('/api/dte/anular', payload);
-  const resultado = resp as unknown as Record<string, unknown>;
+  await cliente.post('/api/dte/anular', payload);
 
   await query(
     `UPDATE dtes_orden

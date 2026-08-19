@@ -46,6 +46,7 @@ export const listarClientes = async ({ tenantId, filtros = {} }: { tenantId: str
             tipo_documento, numero_documento,
             nit, nrc, razon_social,
             direccion, municipio, departamento,
+            tipo_cliente, cod_actividad, desc_actividad,
             activo, creado_en
      FROM clientes
      WHERE ${condiciones.join(' AND ')}

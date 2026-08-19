@@ -35,7 +35,8 @@ export const actualizarCliente = async ({ tenantId, clienteId, datos }: { tenant
     'nombre', 'apellido', 'telefono', 'email',
     'tipo_documento', 'numero_documento',
     'nit', 'nrc', 'razon_social',
-    'direccion', 'municipio', 'departamento', 'activo',
+    'direccion', 'municipio', 'departamento',
+    'tipo_cliente', 'cod_actividad', 'desc_actividad', 'activo',
   ];
 
   const campos: string[] = [];
@@ -61,7 +62,8 @@ export const actualizarCliente = async ({ tenantId, clienteId, datos }: { tenant
      RETURNING id, nombre, apellido, telefono, email,
                tipo_documento, numero_documento,
                nit, nrc, razon_social,
-               direccion, municipio, departamento, activo`,
+               direccion, municipio, departamento,
+               tipo_cliente, cod_actividad, desc_actividad, activo`,
     valores
   );
 

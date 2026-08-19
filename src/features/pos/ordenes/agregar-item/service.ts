@@ -82,7 +82,7 @@ const agregarComboAOrden = async ({ tenantId, ordenId, usuarioId, datos, combo }
 
     await client.query('COMMIT');
 
-    if (ordenEnProceso) {
+    if (ordenEnProceso && orden.tipo !== 'rapido') {
       for (const item of itemsInsertados) {
         io.to(`tenant:${tenantId}`).emit('cocina:nuevo-item', {
           item_id: item.id,
@@ -211,13 +211,15 @@ export const agregarItem = async ({ tenantId, ordenId, usuarioId, datos }: { ten
     await client.query('COMMIT');
 
     const nuevoItem = rows[0] as Record<string, unknown>;
-    io.to(`tenant:${tenantId}`).emit('cocina:nuevo-item', {
-      item_id: nuevoItem.id,
-      orden_id: ordenId,
-      nombre_producto: nuevoItem.nombre_producto,
-      cantidad: nuevoItem.cantidad,
-      notas: nuevoItem.notas,
-    });
+    if (orden.tipo !== 'rapido') {
+      io.to(`tenant:${tenantId}`).emit('cocina:nuevo-item', {
+        item_id: nuevoItem.id,
+        orden_id: ordenId,
+        nombre_producto: nuevoItem.nombre_producto,
+        cantidad: nuevoItem.cantidad,
+        notas: nuevoItem.notas,
+      });
+    }
 
     logger.info('Item agregado a orden', {
       orden_id: ordenId,

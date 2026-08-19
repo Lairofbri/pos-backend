@@ -17,5 +17,8 @@ export const actualizarClienteSchema = Joi.object({
   direccion: Joi.string().max(255).optional().allow('', null),
   municipio: Joi.string().max(100).optional().allow('', null),
   departamento: Joi.string().max(100).optional().allow('', null),
+  tipo_cliente: Joi.string().valid('natural', 'juridico').optional(),
+  cod_actividad: Joi.string().max(6).optional().allow('', null),
+  desc_actividad: Joi.string().max(300).optional().allow('', null),
   activo: Joi.boolean().optional(),
 }).min(1);

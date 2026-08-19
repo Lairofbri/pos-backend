@@ -34,6 +34,11 @@ export const actualizarProducto = async ({ tenantId, productoId, datos }: { tena
     }
   }
 
+  if (datos.precio_costo !== undefined) {
+    campos.push(`costo_promedio = $${idx++}`);
+    valores.push(datos.precio_costo);
+  }
+
   if (campos.length === 0) {
     throw { status: 400, mensaje: 'No hay campos para actualizar.' };
   }
@@ -44,7 +49,7 @@ export const actualizarProducto = async ({ tenantId, productoId, datos }: { tena
     `UPDATE productos SET ${campos.join(', ')}
      WHERE id = $${idx++} AND tenant_id = $${idx}
      RETURNING
-        id, nombre, descripcion, precio, precio_costo, imagen_url,
+        id, nombre, descripcion, precio, precio_costo, costo_promedio, imagen_url,
        tiene_stock, stock_actual, stock_minimo,
        codigo, activo, orden, categoria_id`,
     valores

@@ -2,34 +2,14 @@
 -- Migración 052: Menú Rentabilidad + Menú Costos + Permisos
 -- =============================================
 
--- Permisos
-INSERT INTO permisos (id, tenant_id, codigo, nombre, descripcion, modulo, activo)
-SELECT
-    gen_random_uuid(),
-    t.id,
-    'rentabilidad.ver',
-    'Ver rentabilidad',
-    'Ver dashboard de rentabilidad con gráficos de margen y evolución',
-    'rentabilidad',
-    TRUE
-FROM tenants t
-WHERE NOT EXISTS (
-    SELECT 1 FROM permisos p WHERE p.tenant_id = t.id AND p.codigo = 'rentabilidad.ver'
-);
+-- Permisos (globales, sin tenant_id)
+INSERT INTO permisos (id, codigo, nombre, descripcion, modulo)
+SELECT gen_random_uuid(), 'rentabilidad.ver', 'Ver rentabilidad', 'Ver dashboard de rentabilidad con gráficos de margen y evolución', 'rentabilidad'
+WHERE NOT EXISTS (SELECT 1 FROM permisos WHERE codigo = 'rentabilidad.ver');
 
-INSERT INTO permisos (id, tenant_id, codigo, nombre, descripcion, modulo, activo)
-SELECT
-    gen_random_uuid(),
-    t.id,
-    'costos.ver',
-    'Ver costos',
-    'Ver reportes de costos (por producto, categoría, evolución, inventario)',
-    'costos',
-    TRUE
-FROM tenants t
-WHERE NOT EXISTS (
-    SELECT 1 FROM permisos p WHERE p.tenant_id = t.id AND p.codigo = 'costos.ver'
-);
+INSERT INTO permisos (id, codigo, nombre, descripcion, modulo)
+SELECT gen_random_uuid(), 'costos.ver', 'Ver costos', 'Ver reportes de costos (por producto, categoría, evolución, inventario)', 'costos'
+WHERE NOT EXISTS (SELECT 1 FROM permisos WHERE codigo = 'costos.ver');
 
 -- Asignar permisos al rol admin
 INSERT INTO permisos_default (rol, permiso_id, activo)
@@ -56,8 +36,7 @@ SELECT
 FROM tenants t
 WHERE NOT EXISTS (
     SELECT 1 FROM menus m WHERE m.tenant_id = t.id AND m.ruta = '/admin/rentabilidad'
-)
-ON CONFLICT DO NOTHING;
+);
 
 -- Menú: Costos (bajo Administración)
 INSERT INTO menus (id, tenant_id, titulo, icono, ruta, orden, permiso_codigo, parent_id, activo)
@@ -74,9 +53,4 @@ SELECT
 FROM tenants t
 WHERE NOT EXISTS (
     SELECT 1 FROM menus m WHERE m.tenant_id = t.id AND m.ruta = '/admin/reportes/costos'
-)
-ON CONFLICT DO NOTHING;
-
--- =============================================
--- FIN DE MIGRACIÓN
--- =============================================
+);

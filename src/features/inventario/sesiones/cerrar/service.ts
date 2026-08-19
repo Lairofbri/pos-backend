@@ -25,9 +25,6 @@ export const cerrarSesion = async ({
     throw { status: 400, mensaje: 'La sesión no existe, no está abierta o ya fue cerrada.' };
   }
 
-  const sesion = sesiones[0];
-  const snapshot = (sesion.stock_snapshot as Record<string, number>) || {};
-
   const aplicarIds = lineas.filter(l => l.aplicar).map(l => l.producto_id);
   const ignorarIds = lineas.filter(l => !l.aplicar).map(l => l.producto_id);
 

@@ -8,7 +8,7 @@ const formatearCliente = (row: Record<string, unknown>) => ({
 });
 
 export const crearCliente = async ({ tenantId, datos }: { tenantId: string; datos: Record<string, unknown> }) => {
-  const { nombre, apellido, telefono, email, tipo_documento, numero_documento, nit, nrc, razon_social, direccion, municipio, departamento } = datos;
+  const { nombre, apellido, telefono, email, tipo_documento, numero_documento, nit, nrc, razon_social, direccion, municipio, departamento, tipo_cliente, cod_actividad, desc_actividad } = datos;
 
   if (nit) {
     const { rows: existeNit } = await query(
@@ -34,16 +34,18 @@ export const crearCliente = async ({ tenantId, datos }: { tenantId: string; dato
     `INSERT INTO clientes (
        tenant_id, nombre, apellido, telefono, email,
        tipo_documento, numero_documento, nit, nrc, razon_social,
-       direccion, municipio, departamento
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       direccion, municipio, departamento, tipo_cliente, cod_actividad, desc_actividad
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
      RETURNING id, nombre, apellido, telefono, email,
                tipo_documento, numero_documento,
                nit, nrc, razon_social,
                direccion, municipio, departamento,
+               tipo_cliente, cod_actividad, desc_actividad,
                activo, creado_en`,
     [tenantId, nombre, apellido || null, telefono || null, email || null,
      tipo_documento || 'dui', numero_documento || null, nit || null, nrc || null,
-     razon_social || null, direccion || null, municipio || null, departamento || null]
+     razon_social || null, direccion || null, municipio || null, departamento || null,
+     tipo_cliente || 'natural', cod_actividad || null, desc_actividad || null]
   );
 
   logger.info('Cliente creado', { tenant_id: tenantId, cliente_id: (rows[0] as Record<string, unknown>).id, nombre: nombre as string, nit: (nit as string) || 'N/A' });

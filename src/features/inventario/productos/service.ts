@@ -16,7 +16,6 @@ export const listarProductosInventario = async ({
 }) => {
   const {
     categoria_id,
-    sucursal_id,
     busqueda,
     stock_bajo,
     pagina = 1,

@@ -13,6 +13,25 @@ interface RentabilidadProducto {
   alerta: 'ganancia' | 'equilibrio' | 'perdida' | 'sin_datos';
 }
 
+interface IngredienteCostoRow {
+  costo_promedio: number;
+  cantidad: number;
+  factor_base: number;
+  factor_ingrediente: number;
+}
+
+interface ProductoRow {
+  id: string;
+  nombre: string;
+  precio_venta: unknown;
+  costo_promedio: unknown;
+  margen_bruto: unknown;
+  margen_pct: unknown;
+  stock_actual: unknown;
+  categoria_nombre: string;
+  tiene_receta: boolean;
+}
+
 interface RentabilidadResponse {
   productos: RentabilidadProducto[];
   resumen: {
@@ -79,17 +98,17 @@ export const listarRentabilidad = async ({
     valores
   );
 
-  const productosConAlerta = (productos as any[]).map((p) => ({
+  const productosConAlerta = (productos as unknown as ProductoRow[]).map((p) => ({
     ...p,
-    precio_venta: parseFloat(p.precio_venta),
-    costo_promedio: parseFloat(p.costo_promedio),
-    margen_bruto: parseFloat(p.margen_bruto),
-    margen_pct: parseFloat(p.margen_pct),
-    stock_actual: parseFloat(p.stock_actual),
+    precio_venta: Number(p.precio_venta),
+    costo_promedio: Number(p.costo_promedio),
+    margen_bruto: Number(p.margen_bruto),
+    margen_pct: Number(p.margen_pct),
+    stock_actual: Number(p.stock_actual),
     alerta: clasificarAlerta(
-      parseFloat(p.margen_bruto),
-      parseFloat(p.margen_pct),
-      parseFloat(p.costo_promedio),
+      Number(p.margen_bruto),
+      Number(p.margen_pct),
+      Number(p.costo_promedio),
     ),
   })) as RentabilidadProducto[];
 
@@ -108,7 +127,7 @@ export const listarRentabilidad = async ({
     if (recetasRows.length === 0) continue;
 
     const receta = recetasRows[0] as { id: string; rendimiento: number };
-    const rendimiento = parseFloat(receta.rendimiento as any) || 1;
+    const rendimiento = Number(receta.rendimiento) || 1;
 
     const { rows: ingredientes } = await query(
       `SELECT
@@ -126,16 +145,16 @@ export const listarRentabilidad = async ({
 
     if (ingredientes.length === 0) continue;
 
-    const todosConCosto = (ingredientes as any[]).every(
-      (i) => parseFloat(i.costo_promedio) > 0,
+    const todosConCosto = (ingredientes as unknown as IngredienteCostoRow[]).every(
+      (i) => Number(i.costo_promedio) > 0,
     );
-
+  
     if (!todosConCosto) continue;
 
-    const costoTotal = (ingredientes as any[]).reduce((sum, ing) => {
-      const factorConversion = parseFloat(ing.factor_ingrediente) / parseFloat(ing.factor_base);
-      const cantidadBase = parseFloat(ing.cantidad) * factorConversion;
-      return sum + cantidadBase * parseFloat(ing.costo_promedio);
+    const costoTotal = (ingredientes as unknown as IngredienteCostoRow[]).reduce((sum, ing) => {
+      const factorConversion = Number(ing.factor_ingrediente) / Number(ing.factor_base);
+      const cantidadBase = Number(ing.cantidad) * factorConversion;
+      return sum + cantidadBase * Number(ing.costo_promedio);
     }, 0);
 
     const costoPorPorcion = Math.round((costoTotal / rendimiento) * 100) / 100;

@@ -1,26 +1,26 @@
 import { query, getClient } from '../../../shared/config/database.js';
 import { obtenerClientePorTenant } from '../../../shared/dte-client.js';
 import { logger } from '../../../shared/utils/logger.js';
+import { env } from '../../../shared/config/env.js';
 
 const MAPA_TIPO_DOC: Record<string, string> = {
   dui: '13', nit: '36', pasaporte: '03', carnet_residente: '02', otro: '37',
 };
 
-const DEPTO_MAP: Record<string, string> = {
-  ahachapán: '01', ahuchapan: '01',
-  'santa ana': '02',
-  sonsonate: '03',
-  chalatenango: '04',
-  'la libertad': '05',
-  'san salvador': '06',
-  cuscatlán: '07', cuscatlan: '07',
-  'la paz': '08',
-  cabañas: '09', cabanas: '09',
-  'san vicente': '10',
-  usulután: '11', usulutan: '11',
-  'san miguel': '12',
-  morazán: '13', morazan: '13',
-  'la unión': '14', 'la union': '14',
+const buscarCodigoDepto = async (nombre: string): Promise<string | null> => {
+  const { rows } = await query(
+    `SELECT codigo FROM departamentos WHERE LOWER(nombre) = $1`,
+    [nombre.toLowerCase().trim()]
+  );
+  return rows[0]?.codigo || null;
+};
+
+const buscarCodigoMuni = async (nombre: string, deptoCod: string): Promise<string | null> => {
+  const { rows } = await query(
+    `SELECT codigo FROM municipios WHERE LOWER(nombre) = $1 AND departamento_cod = $2`,
+    [nombre.toLowerCase().trim(), deptoCod]
+  );
+  return rows[0]?.codigo || null;
 };
 
 const MAPA_METODO_MH: Record<string, string> = {
@@ -104,10 +104,14 @@ const mapearItems = (items: ItemRow[]) => {
     }));
 };
 
-export const emitir = async ({ tenantId, usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
+export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
   const ordenId = datos.orden_id as string;
   const tipoDte = (datos.tipo_dte as string) || '01';
-  const passwordPri = datos.password_pri as string;
+  const passwordPri = (datos.password_pri as string) || env.DTE_PASSWORD_PRI;
+
+  if (!passwordPri) {
+    throw { status: 400, mensaje: 'password_pri es requerido. Configura DTE_PASSWORD_PRI en el entorno.' };
+  }
 
   const { orden, items, pagos } = await obtenerOrdenCompleta(tenantId, ordenId);
 
@@ -129,7 +133,7 @@ export const emitir = async ({ tenantId, usuarioId, datos }: { tenantId: string;
   for (const pago of pagos) {
     const metodo = (pago.metodo as string) || 'efectivo';
     const codigoMH = MAPA_METODO_MH[metodo] || '99';
-    let monto = Number(pago.total_pagado) || 0;
+    const monto = Number(pago.total_pagado) || 0;
 
     if (metodo === 'mixto') {
       const ef = Number(pago.monto_efectivo) || 0;
@@ -178,10 +182,18 @@ export const emitir = async ({ tenantId, usuarioId, datos }: { tenantId: string;
     if (orden.cliente_email) receptor.correo = orden.cliente_email;
     if (orden.cliente_direccion) receptor.direccion = orden.cliente_direccion;
 
-    const deptoLower = ((orden.departamento as string) || '').toLowerCase().trim();
-    const muniLower = ((orden.municipio as string) || '').toLowerCase().trim();
-    if (orden.departamento) receptor.departamento_cod = DEPTO_MAP[deptoLower] || '06';
-    if (orden.municipio) receptor.municipio_cod = DEPTO_MAP[muniLower] || '20';
+    let deptoCod = '06';
+    let muniCod = '20';
+    if (orden.departamento && orden.municipio) {
+      const dCod = await buscarCodigoDepto(orden.departamento as string);
+      if (dCod) {
+        deptoCod = dCod;
+        const mCod = await buscarCodigoMuni(orden.municipio as string, dCod);
+        if (mCod) muniCod = mCod;
+      }
+    }
+    receptor.departamento_cod = deptoCod;
+    receptor.municipio_cod = muniCod;
 
     payload = { ...payloadBase, receptor };
   } else if (tipoDte === '03') {
@@ -199,10 +211,18 @@ export const emitir = async ({ tenantId, usuarioId, datos }: { tenantId: string;
     if (orden.cliente_email) receptor.correo = orden.cliente_email;
     if (orden.cliente_direccion) receptor.direccion = orden.cliente_direccion;
 
-    const deptoLower = ((orden.departamento as string) || '').toLowerCase().trim();
-    const muniLower = ((orden.municipio as string) || '').toLowerCase().trim();
-    if (orden.departamento) receptor.departamento_cod = DEPTO_MAP[deptoLower] || '06';
-    if (orden.municipio) receptor.municipio_cod = DEPTO_MAP[muniLower] || '20';
+    let deptoCod = '06';
+    let muniCod = '20';
+    if (orden.departamento && orden.municipio) {
+      const dCod = await buscarCodigoDepto(orden.departamento as string);
+      if (dCod) {
+        deptoCod = dCod;
+        const mCod = await buscarCodigoMuni(orden.municipio as string, dCod);
+        if (mCod) muniCod = mCod;
+      }
+    }
+    receptor.departamento_cod = deptoCod;
+    receptor.municipio_cod = muniCod;
 
     payload = { ...payloadBase, receptor };
   } else {
@@ -218,6 +238,15 @@ export const emitir = async ({ tenantId, usuarioId, datos }: { tenantId: string;
     if (orden.cliente_telefono) receptor.telefono = orden.cliente_telefono;
     if (orden.cliente_email) receptor.correo = orden.cliente_email;
     if (orden.cliente_direccion) receptor.direccion = orden.cliente_direccion;
+
+    if (orden.departamento && orden.municipio) {
+      const dCod = await buscarCodigoDepto(orden.departamento as string);
+      if (dCod) {
+        receptor.departamento_cod = dCod;
+        const mCod = await buscarCodigoMuni(orden.municipio as string, dCod);
+        if (mCod) receptor.municipio_cod = mCod;
+      }
+    }
 
     payload = { ...payloadBase, receptor };
   }

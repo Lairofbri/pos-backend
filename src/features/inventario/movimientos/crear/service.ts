@@ -1,4 +1,4 @@
-import { query, getClient } from '../../../../shared/config/database.js';
+import { getClient } from '../../../../shared/config/database.js';
 import { logger } from '../../../../shared/utils/logger.js';
 import { incrementarStock, fijarStock, descontarStock, convertirCantidad } from '../../stock-service.js';
 

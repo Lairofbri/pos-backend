@@ -36,14 +36,16 @@ export const crearProducto = async ({ tenantId, datos }: { tenantId: string; dat
     }
   }
 
+  const costo = precio_costo ?? 0;
+
   const { rows } = await query(
     `INSERT INTO productos
-       (tenant_id, categoria_id, nombre, descripcion, precio, precio_costo,
+       (tenant_id, categoria_id, nombre, descripcion, precio, precio_costo, costo_promedio,
         imagen_url, tiene_stock, stock_actual, stock_minimo,
         codigo, orden, se_vende, tiene_receta, unidad_medida_id, categoria_extras_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      RETURNING
-       id, nombre, descripcion, precio, precio_costo, imagen_url,
+       id, nombre, descripcion, precio, precio_costo, costo_promedio, imagen_url,
        tiene_stock, stock_actual, stock_minimo,
        codigo, activo, orden, categoria_id,
        se_vende, tiene_receta, unidad_medida_id, categoria_extras_id, creado_en`,
@@ -53,7 +55,8 @@ export const crearProducto = async ({ tenantId, datos }: { tenantId: string; dat
       nombre,
       descripcion || null,
       precio ?? 0,
-      precio_costo ?? 0,
+      costo,
+      costo,
       imagen_url || null,
       tiene_stock ?? false,
       stock_actual ?? 0,

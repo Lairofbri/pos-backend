@@ -50,14 +50,15 @@ export const resumenDiario = async ({ tenantId, fecha, sucursalId }: { tenantId:
   const { rows: ordenesRows } = await query(
     `SELECT
        COUNT(*)::int AS cantidad_ordenes,
-       COUNT(*) FILTER (WHERE cliente_id IS NOT NULL)::int AS clientes_atendidos
+       COUNT(*) FILTER (WHERE cliente_id IS NOT NULL)::int AS clientes_atendidos,
+       SUM(COALESCE(num_personas, 1))::int AS total_personas
      FROM ordenes
      WHERE tenant_id = $1 AND estado = 'pagada' AND creado_en::date = $2::date
        ${ordenesCondicion}`,
     valoresOrdenes
   );
 
-  const { cantidad_ordenes, clientes_atendidos } = ordenesRows[0] as { cantidad_ordenes: string; clientes_atendidos: string };
+  const { cantidad_ordenes, clientes_atendidos, total_personas } = ordenesRows[0] as { cantidad_ordenes: string; clientes_atendidos: string; total_personas: string };
 
   const ticket_promedio = Number(cantidad_ordenes) > 0
     ? Number((Number(total_ingresos) / Number(cantidad_ordenes)).toFixed(2))
@@ -69,6 +70,7 @@ export const resumenDiario = async ({ tenantId, fecha, sucursalId }: { tenantId:
     cantidad_ordenes: Number(cantidad_ordenes),
     ticket_promedio,
     clientes_atendidos: Number(clientes_atendidos),
+    total_personas: Number(total_personas),
     metodos: (metodos as Array<Record<string, unknown>>).map(m => ({
       metodo: m.metodo,
       cantidad_ordenes: m.cantidad_ordenes,

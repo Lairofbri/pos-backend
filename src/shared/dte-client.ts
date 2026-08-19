@@ -15,7 +15,8 @@ export const crearClienteDte = (baseURL: string, apiKey: string, tenantId?: stri
   });
 
   cliente.interceptors.response.use(
-    (response) => response.data as unknown as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (response) => response.data as any,
     (error) => {
       if (error.response) {
         const mensaje = error.response.data?.mensaje || `DTE Service error: ${error.response.status}`;

@@ -17,6 +17,9 @@ export const crearClienteSchema = Joi.object({
     .optional().allow('', null).messages({
       'string.email': 'El email no tiene un formato válido.',
     }),
+  tipo_cliente: Joi.string()
+    .valid('natural', 'juridico')
+    .optional().default('natural'),
   tipo_documento: Joi.string()
     .valid('dui', 'nit', 'pasaporte', 'carnet_residente')
     .optional().default('dui').messages({
@@ -33,4 +36,6 @@ export const crearClienteSchema = Joi.object({
   direccion: Joi.string().max(255).optional().allow('', null),
   municipio: Joi.string().max(100).optional().allow('', null),
   departamento: Joi.string().max(100).optional().allow('', null),
+  cod_actividad: Joi.string().max(6).optional().allow('', null),
+  desc_actividad: Joi.string().max(300).optional().allow('', null),
 });
