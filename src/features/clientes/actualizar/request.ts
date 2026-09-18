@@ -9,7 +9,7 @@ export const actualizarClienteSchema = Joi.object({
   apellido: Joi.string().max(100).optional().allow('', null),
   telefono: Joi.string().pattern(telefonoRegex).optional().allow('', null),
   email: Joi.string().email({ tlds: { allow: false } }).lowercase().optional().allow('', null),
-  tipo_documento: Joi.string().valid('dui', 'nit', 'pasaporte', 'carnet_residente').optional(),
+  tipo_documento: Joi.string().valid('dui', 'nit', 'pasaporte', 'carnet_residente', 'otro').optional(),
   numero_documento: Joi.string().max(20).optional().allow('', null),
   nit: Joi.string().pattern(nitRegex).optional().allow('', null),
   nrc: Joi.string().pattern(nrcRegex).optional().allow('', null),

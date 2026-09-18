@@ -2,6 +2,7 @@ import { getClient } from '../../../../shared/config/database.js';
 import { logger } from '../../../../shared/utils/logger.js';
 import { obtenerOrdenShared } from '../../shared.js';
 import { io } from '../../../../server.js';
+import { evaluarYNotificar } from '../../../alertas/notificar.js';
 
 interface MetodoPago {
   metodo: string;
@@ -130,6 +131,103 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
       [tenantId, ordenId]
     );
 
+    const necesidades = new Map<string, { cantidad: number }>();
+    const sumarNecesidad = (productoId: string, cantidad: number) => {
+      const actual = necesidades.get(productoId);
+      if (actual) {
+        actual.cantidad = Math.round((actual.cantidad + cantidad) * 10000) / 10000;
+      } else {
+        necesidades.set(productoId, { cantidad: Math.round(cantidad * 10000) / 10000 });
+      }
+    };
+
+    for (const item of itemsAPagar as Array<{ producto_id: string; cantidad: number; tiene_receta: boolean; tiene_stock: boolean; receta_version: number | null; modificaciones: { sin?: string[]; extra?: Array<{ producto_id: string; cantidad: number; precio: number }> } | null }>) {
+      const sinIds = (item.modificaciones?.sin || []) as string[];
+      if (item.tiene_receta) {
+        const { rows: ingredientes } = await client.query(
+          `SELECT ri.ingrediente_id, ri.cantidad AS receta_cantidad,
+                  ri.unidad_medida_id,
+                  u.factor AS receta_factor,
+                  r.rendimiento,
+                  p.unidad_medida_id AS prod_um_id,
+                  pu.factor AS prod_factor
+           FROM receta_ingredientes ri
+           JOIN recetas r ON r.id = ri.receta_id AND r.producto_id = $1
+              ${item.receta_version ? 'AND r.version = $3' : 'AND r.vigente_hasta IS NULL'}
+           JOIN productos p ON p.id = ri.ingrediente_id AND p.tenant_id = $2
+           JOIN unidades_medida u ON u.id = ri.unidad_medida_id
+           LEFT JOIN unidades_medida pu ON pu.id = p.unidad_medida_id`,
+          [item.producto_id, tenantId, ...(item.receta_version ? [item.receta_version] : [])]
+        );
+
+        for (const ing of ingredientes as Array<{
+          ingrediente_id: string;
+          receta_cantidad: number;
+          receta_factor: number;
+          rendimiento: number;
+          prod_factor: number | null;
+        }>) {
+          if (sinIds.includes(ing.ingrediente_id)) continue;
+          const recetaCantidad = Number(ing.receta_cantidad);
+          const recetaFactor = Number(ing.receta_factor);
+          const rendimiento = Number(ing.rendimiento) || 1;
+          const prodFactor = Number(ing.prod_factor || 1);
+
+          const qtyEnUnidadBase = recetaCantidad * recetaFactor;
+          const qtyEnStockUnit = prodFactor > 0 ? qtyEnUnidadBase / prodFactor : qtyEnUnidadBase;
+          const qtyAConsumir = Math.round((qtyEnStockUnit / rendimiento) * item.cantidad * 10000) / 10000;
+
+          sumarNecesidad(ing.ingrediente_id, qtyAConsumir);
+        }
+
+        for (const extra of (item.modificaciones?.extra || [])) {
+          sumarNecesidad(extra.producto_id, extra.cantidad || 1);
+        }
+      } else if (item.tiene_stock) {
+        sumarNecesidad(item.producto_id, item.cantidad);
+      }
+    }
+
+    const stockPorProducto = new Map<string, { nombre: string; stock_actual: number }>();
+    const idsNecesarios = [...necesidades.keys()];
+    if (idsNecesarios.length > 0) {
+      const { rows: stockRows } = await client.query(
+        `SELECT id, nombre, stock_actual FROM productos
+         WHERE id = ANY($1::uuid[]) AND tenant_id = $2
+         ORDER BY id
+         FOR UPDATE`,
+        [idsNecesarios, tenantId]
+      );
+      for (const r of stockRows as Array<{ id: string; nombre: string; stock_actual: number }>) {
+        stockPorProducto.set(r.id, r);
+      }
+    }
+
+    const faltantes: Array<{ nombre: string; necesita: number; hay: number }> = [];
+    for (const [productoId, nec] of necesidades) {
+      const prod = stockPorProducto.get(productoId);
+      if (!prod) {
+        faltantes.push({ nombre: productoId, necesita: nec.cantidad, hay: 0 });
+        continue;
+      }
+      const stockActual = Number(prod.stock_actual);
+      if (stockActual < nec.cantidad) {
+        faltantes.push({ nombre: prod.nombre, necesita: nec.cantidad, hay: stockActual });
+      }
+    }
+
+    if (faltantes.length > 0) {
+      const detalle = faltantes
+        .slice(0, 5)
+        .map((f) => `"${f.nombre}": necesita ${f.necesita}, hay ${f.hay}`)
+        .join('; ');
+      const extraInfo = faltantes.length > 5 ? ` (y ${faltantes.length - 5} más)` : '';
+      throw {
+        status: 400,
+        mensaje: `Stock insuficiente para completar el pago: ${detalle}${extraInfo}.`,
+      };
+    }
+
     for (const item of itemsAPagar as Array<{ producto_id: string; cantidad: number; tiene_receta: boolean; tiene_stock: boolean; receta_version: number | null; modificaciones: { sin?: string[]; extra?: Array<{ producto_id: string; cantidad: number; precio: number }> } | null }>) {
       const sinIds = (item.modificaciones?.sin || []) as string[];
       if (item.tiene_receta) {
@@ -234,6 +332,8 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
         numero_orden: orden.numero_orden,
       });
     }
+
+    void evaluarYNotificar(tenantId);
 
     logger.info('Pago registrado', {
       orden_id: ordenId,

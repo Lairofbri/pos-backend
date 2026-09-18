@@ -1,6 +1,7 @@
 import { getClient } from '../../../shared/config/database.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { obtenerCajaAbierta } from '../shared.js';
+import { evaluarYNotificar } from '../../alertas/notificar.js';
 
 export const abrirCaja = async ({ tenantId, usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
   const { monto_inicial, sucursal_id, notas } = datos as { monto_inicial: number; sucursal_id?: string; notas?: string };
@@ -31,6 +32,8 @@ export const abrirCaja = async ({ tenantId, usuarioId, datos }: { tenantId: stri
     );
 
     await client.query('COMMIT');
+
+    void evaluarYNotificar(tenantId);
 
     logger.info('Caja abierta', {
       caja_id: rows[0].id,

@@ -21,9 +21,9 @@ export const crearClienteSchema = Joi.object({
     .valid('natural', 'juridico')
     .optional().default('natural'),
   tipo_documento: Joi.string()
-    .valid('dui', 'nit', 'pasaporte', 'carnet_residente')
+    .valid('dui', 'nit', 'pasaporte', 'carnet_residente', 'otro')
     .optional().default('dui').messages({
-      'any.only': 'El tipo de documento debe ser dui, nit, pasaporte o carnet_residente.',
+      'any.only': 'El tipo de documento debe ser dui, nit, pasaporte, carnet_residente u otro.',
     }),
   numero_documento: Joi.string().max(20).optional().allow('', null),
   nit: Joi.string().pattern(nitRegex).optional().allow('', null).messages({

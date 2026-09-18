@@ -64,6 +64,8 @@ const sembrarMenusTenant = async (tenantId) => {
     { id: '00000000-0000-4000-8000-000000000016', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Rentabilidad', icono: 'trending-up',  ruta: '/admin/rentabilidad',        orden: 10, permiso_codigo: 'rentabilidad.ver' },
     { id: '00000000-0000-4000-8000-000000000017', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Costos',      icono: 'dollar-sign', ruta: '/admin/reportes/costos', orden: 11, permiso_codigo: 'costos.ver' },
     { id: '00000000-0000-4000-8000-000000000018', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Cuentas',     icono: 'receipt',     ruta: '/admin/cuentas',         orden: 12, permiso_codigo: 'ordenes.ver' },
+    { id: '00000000-0000-4000-8000-000000000020', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Restaurante', icono: 'store',       ruta: '/admin/restaurante',     orden: 15, permiso_codigo: null },
+    { id: '00000000-0000-4000-8000-000000000021', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Promociones', icono: 'tag',         ruta: '/admin/promociones',     orden: 16, permiso_codigo: null },
 
     // Hijos de Configuraciones
     { id: '00000000-0000-4000-8000-000000000011', parent_id: '00000000-0000-4000-8000-000000000010', titulo: 'Menú',           icono: 'menu',   ruta: '/configuraciones/menus', orden: 1, permiso_codigo: 'roles.configurar' },

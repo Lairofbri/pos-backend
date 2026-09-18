@@ -1,5 +1,6 @@
 import { query, getClient } from '../../shared/config/database.js';
 import { TASA_IVA } from '../../shared/utils/constants.js';
+import { aplicarPromocionesOrden } from '../promociones/evaluar.js';
 
 export const calcularTotales = (subtotal: number, porcentajeDescuento = 0) => {
   const descuento = Number((subtotal * (porcentajeDescuento / 100)).toFixed(2));
@@ -10,8 +11,10 @@ export const calcularTotales = (subtotal: number, porcentajeDescuento = 0) => {
 };
 
 export const recalcularOrden = async (client: Awaited<ReturnType<typeof getClient>>, ordenId: string, tenantId: string) => {
+  await aplicarPromocionesOrden(client, tenantId, ordenId);
+
   const { rows: itemsRows } = await client.query(
-    `SELECT COALESCE(SUM(subtotal - (subtotal * COALESCE(descuento_porcentaje, 0) / 100)), 0) as subtotal
+    `SELECT COALESCE(SUM(subtotal - (subtotal * COALESCE(descuento_porcentaje, 0) / 100) - COALESCE(descuento_promo, 0)), 0) as subtotal
      FROM orden_items
      WHERE orden_id = $1 AND tenant_id = $2 AND estado != 'cancelado'`,
     [ordenId, tenantId]
@@ -128,6 +131,7 @@ export const obtenerOrdenShared = async ({ tenantId, ordenId }: { tenantId: stri
        o.subtotal, o.porcentaje_descuento, o.descuento,
        o.total, o.gravado, o.iva, o.notas,
        o.propina_porcentaje, o.propina_monto,
+       o.promociones_aplicadas,
        o.mesa_id, o.cliente_id, o.usuario_id,
        o.creado_en, o.actualizado_en, o.cerrado_en,
         m.numero AS mesa_numero,
@@ -147,7 +151,8 @@ export const obtenerOrdenShared = async ({ tenantId, ordenId }: { tenantId: stri
     `SELECT
        oi.id, oi.producto_id, oi.nombre_producto AS nombre, oi.precio_unitario,
        oi.cantidad, oi.subtotal, COALESCE(oi.descuento_porcentaje, 0) as descuento_porcentaje,
-       (oi.subtotal - (oi.subtotal * COALESCE(oi.descuento_porcentaje, 0) / 100)) as subtotal_con_descuento,
+       COALESCE(oi.descuento_promo, 0) as descuento_promo,
+       (oi.subtotal - (oi.subtotal * COALESCE(oi.descuento_porcentaje, 0) / 100) - COALESCE(oi.descuento_promo, 0)) as subtotal_con_descuento,
        oi.estado, oi.notas, oi.enviado_en, oi.creado_en,
        oi.combo_id,
        (SELECT c.nombre FROM combos c WHERE c.id = oi.combo_id) AS combo_nombre

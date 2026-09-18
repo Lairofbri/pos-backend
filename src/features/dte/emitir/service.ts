@@ -97,10 +97,10 @@ const mapearItems = (items: ItemRow[]) => {
       descripcion: (item.producto_nombre as string) || (item.descripcion as string) || 'Producto',
       precio_unitario: Number(item.precio_unitario) || 0,
       cantidad: Number(item.cantidad) || 1,
-      descuento: Number(item.descuento) || 0,
+      descuento: Number(item.descuento_promo) || 0,
       codigo: (item.producto_codigo as string) || null,
-      tipo_item: 2,
-      uni_medida: 59,
+      tipo_item: 1,
+      uni_medida: 99,
     }));
 };
 
@@ -174,8 +174,8 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
     const tipoDoc = ((orden.tipo_documento as string) || '').toLowerCase();
     const receptor: Record<string, unknown> = {
       nombre: nombreReceptor,
-      tipo_documento: MAPA_TIPO_DOC[tipoDoc] || '13',
-      num_documento: (orden.numero_documento as string) || '',
+      tipo_documento: MAPA_TIPO_DOC[tipoDoc] || '37',
+      num_documento: (orden.numero_documento as string) || '000000',
     };
 
     if (orden.cliente_telefono) receptor.telefono = orden.cliente_telefono;

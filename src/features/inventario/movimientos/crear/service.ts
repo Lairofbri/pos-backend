@@ -1,6 +1,7 @@
 import { getClient } from '../../../../shared/config/database.js';
 import { logger } from '../../../../shared/utils/logger.js';
 import { incrementarStock, fijarStock, descontarStock, convertirCantidad } from '../../stock-service.js';
+import { evaluarYNotificar } from '../../../alertas/notificar.js';
 
 export const crearMovimiento = async ({
   tenantId,
@@ -103,6 +104,8 @@ export const crearMovimiento = async ({
     }
 
     await client.query('COMMIT');
+
+    void evaluarYNotificar(tenantId);
 
     logger.info('Movimiento de inventario registrado', {
       producto_id,

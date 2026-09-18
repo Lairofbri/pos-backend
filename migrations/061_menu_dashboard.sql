@@ -8,6 +8,4 @@ SELECT
     'Dashboard', 'layout-dashboard', '/dashboard',
     3, NULL, NULL, TRUE
 FROM tenants t
-WHERE NOT EXISTS (
-    SELECT 1 FROM menus m WHERE m.tenant_id = t.id AND m.ruta = '/dashboard'
-);
+ON CONFLICT (id) DO NOTHING;

@@ -4,9 +4,16 @@ import { ESTADOS_FINALES } from '../../../../shared/utils/constants.js';
 import { obtenerOrdenShared, recalcularOrden } from '../../shared.js';
 import { io } from '../../../../server.js';
 
+interface AdvertenciaStock {
+  componente: string;
+  ingrediente?: string;
+  necesita: number;
+  hay: number;
+}
+
 const agregarComboAOrden = async ({ tenantId, ordenId, usuarioId, datos, combo }: { tenantId: string; ordenId: string; usuarioId: string; datos: Record<string, unknown>; combo: Record<string, unknown> }) => {
   const { rows: componentes } = await query(
-    `SELECT cp.producto_id, cp.cantidad, p.nombre, p.precio, p.tiene_stock, p.stock_actual, p.activo
+    `SELECT cp.producto_id, cp.cantidad, p.nombre, p.precio, p.tiene_stock, p.stock_actual, p.tiene_receta, p.activo
      FROM combo_productos cp
      JOIN productos p ON p.id = cp.producto_id
      WHERE cp.combo_id = $1`,
@@ -21,16 +28,63 @@ const agregarComboAOrden = async ({ tenantId, ordenId, usuarioId, datos, combo }
   const precioCombo = Number(combo.precio) || 0;
   const precioComboTotal = Number((precioCombo * cantidadCombos).toFixed(2));
 
+  const advertencias: AdvertenciaStock[] = [];
+  const recetaVersiones: Record<string, number | null> = {};
+
   for (const c of componentes as Array<Record<string, unknown>>) {
     if (!c.activo) {
       throw { status: 400, mensaje: `"${c.nombre}" no está disponible actualmente.` };
     }
     const cantidadTotal = (c.cantidad as number) * cantidadCombos;
-    if (c.tiene_stock && (c.stock_actual as number) < cantidadTotal) {
-      throw {
-        status: 400,
-        mensaje: `Stock insuficiente para "${c.nombre}". Necesita ${cantidadTotal}, hay ${c.stock_actual}.`,
-      };
+    recetaVersiones[c.producto_id as string] = null;
+
+    if (c.tiene_receta) {
+      const { rows: ingredientes } = await query(
+        `SELECT ri.cantidad AS receta_cantidad, ri.unidad_medida_id,
+                p.id, p.nombre, p.stock_actual, p.tiene_stock,
+                u.factor AS receta_factor,
+                pu.factor AS prod_factor,
+                r.version AS receta_version, r.rendimiento
+         FROM receta_ingredientes ri
+         JOIN productos p ON p.id = ri.ingrediente_id AND p.tenant_id = $1
+         JOIN unidades_medida u ON u.id = ri.unidad_medida_id
+         LEFT JOIN unidades_medida pu ON pu.id = p.unidad_medida_id
+         JOIN recetas r ON r.id = ri.receta_id AND r.producto_id = $2
+         WHERE r.vigente_hasta IS NULL`,
+        [tenantId, c.producto_id]
+      );
+
+      if (ingredientes.length > 0) {
+        recetaVersiones[c.producto_id as string] = (ingredientes[0] as { receta_version: number }).receta_version;
+      }
+
+      for (const ing of ingredientes as Array<Record<string, unknown>>) {
+        if (!(ing as { tiene_stock?: boolean }).tiene_stock) continue;
+
+        const recetaCantidad = Number(ing.receta_cantidad);
+        const recetaFactor = Number(ing.receta_factor);
+        const prodFactor = Number(ing.prod_factor || 1);
+        const rendimiento = Number(ing.rendimiento) || 1;
+
+        const qtyEnUnidadBase = recetaCantidad * recetaFactor;
+        const qtyEnStockUnit = prodFactor > 0 ? qtyEnUnidadBase / prodFactor : qtyEnUnidadBase;
+        const qtyNecesaria = (qtyEnStockUnit / rendimiento) * cantidadTotal;
+
+        if (Number(ing.stock_actual) < qtyNecesaria) {
+          advertencias.push({
+            componente: c.nombre as string,
+            ingrediente: ing.nombre as string,
+            necesita: Number(qtyNecesaria.toFixed(4)),
+            hay: Number(ing.stock_actual),
+          });
+        }
+      }
+    } else if (c.tiene_stock && (c.stock_actual as number) < cantidadTotal) {
+      advertencias.push({
+        componente: c.nombre as string,
+        necesita: cantidadTotal,
+        hay: c.stock_actual as number,
+      });
     }
   }
 
@@ -62,16 +116,17 @@ const agregarComboAOrden = async ({ tenantId, ordenId, usuarioId, datos, combo }
     // 2. Insertar componentes (precio_unitario = 0, subtotal = 0)
     for (const c of componentes as Array<Record<string, unknown>>) {
       const cantidadTotal = (c.cantidad as number) * cantidadCombos;
+      const recetaVersion = recetaVersiones[c.producto_id as string] || null;
 
       const { rows } = await client.query(
         `INSERT INTO orden_items
-           (orden_id, tenant_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, notas, descuento_porcentaje, combo_id, estado${ordenEnProceso ? ', enviado_en, enviado_por' : ''})
-         VALUES ($1, $2, $3, $4, 0, $5, 0, $6, $7, $8, $9${ordenEnProceso ? ', NOW(), $10' : ''})
+           (orden_id, tenant_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal, notas, descuento_porcentaje, combo_id, receta_version, estado${ordenEnProceso ? ', enviado_en, enviado_por' : ''})
+         VALUES ($1, $2, $3, $4, 0, $5, 0, $6, $7, $8, $9, $10${ordenEnProceso ? ', NOW(), $11' : ''})
          RETURNING id, producto_id, nombre_producto AS nombre, precio_unitario, cantidad, subtotal, descuento_porcentaje, estado, notas, combo_id`,
         [
           ordenId, tenantId, c.producto_id, c.nombre,
           cantidadTotal, (datos.notas as string) || null, (datos.descuento_porcentaje as number) ?? 0,
-          combo.id, estadoItems, ...(ordenEnProceso ? [usuarioId] : []),
+          combo.id, recetaVersion, estadoItems, ...(ordenEnProceso ? [usuarioId] : []),
         ]
       );
 
@@ -100,9 +155,10 @@ const agregarComboAOrden = async ({ tenantId, ordenId, usuarioId, datos, combo }
       items: (componentes as Array<unknown>).length,
       precio_combo_total: precioComboTotal,
       enviado_a_cocina: ordenEnProceso,
+      advertencias: advertencias.length,
     });
 
-    return { items: itemsInsertados, totales, es_combo: true, combo_nombre: combo.nombre };
+    return { items: itemsInsertados, totales, es_combo: true, combo_nombre: combo.nombre, advertencias };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -150,7 +206,8 @@ export const agregarItem = async ({ tenantId, ordenId, usuarioId, datos }: { ten
               p.id, p.nombre, p.stock_actual, p.unidad_medida_id AS prod_um_id,
               p.tiene_stock,
               u.factor AS receta_factor, u.categoria AS receta_categoria,
-              pu.factor AS prod_factor
+              pu.factor AS prod_factor,
+              r.version AS receta_version
        FROM receta_ingredientes ri
        JOIN productos p ON p.id = ri.ingrediente_id AND p.tenant_id = $1
        JOIN unidades_medida u ON u.id = ri.unidad_medida_id
