@@ -108,6 +108,14 @@ type ItemRow = Record<string, unknown>;
 type PagoRow = Record<string, unknown>;
 type TenantRow = { cod_estable_mh: string | null; cod_punto_venta_mh: string | null };
 
+const toCents = (value: unknown): number => {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw { status: 400, mensaje: 'La orden contiene un monto monetario inválido.' };
+  }
+  return Math.round(amount * 100);
+};
+
 const obtenerOrdenCompleta = async (tenantId: string, ordenId: string) => {
   const { rows: ordenes } = await query(
     `SELECT o.*, c.nombre AS cliente_nombre, c.apellido AS cliente_apellido,
@@ -187,43 +195,51 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
   );
   const tenant = (tenantRows[0] || {}) as TenantRow;
 
-  const totalOrden = Number(orden.total) || 0;
-  const propina = Number(orden.propina) || 0;
-  const totalSinPropina = totalOrden - propina;
+  const totalFiscalCents = toCents(orden.total);
 
   const cuerpoItems = mapearItems(items);
 
-  // Construir pagos[] con códigos MH (CAT-007)
+  // Construir pagos fiscales con códigos MH (CAT-007). La propina y el vuelto
+  // son importes operativos y no forman parte de los pagos del DTE.
   const pagosMH: Array<{ codigo: string; montoPago: number; referencia?: string | null }> = [];
-  let montoEfectivo = 0;
+  let restanteFiscalCents = totalFiscalCents;
   for (const pago of pagos) {
     const metodo = (pago.metodo as string) || 'efectivo';
     const codigoMH = MAPA_METODO_MH[metodo] || '99';
-    const monto = Number(pago.total_pagado) || 0;
+    const montoRecibidoCents = toCents(pago.total_pagado);
+    const vueltoCents = toCents(pago.vuelto);
+    const disponibleCents = Math.max(0, montoRecibidoCents - vueltoCents);
+    const montoFiscalCents = Math.min(restanteFiscalCents, disponibleCents);
 
     if (metodo === 'mixto') {
-      const ef = Number(pago.monto_efectivo) || 0;
-      const tj = Number(pago.monto_tarjeta) || 0;
-      if (ef > 0) pagosMH.push({ codigo: '01', montoPago: ef });
-      if (tj > 0) pagosMH.push({ codigo: '03', montoPago: tj });
-      montoEfectivo += ef;
+      const efectivoCents = Math.min(toCents(pago.monto_efectivo), montoFiscalCents);
+      const tarjetaCents = Math.min(toCents(pago.monto_tarjeta), montoFiscalCents - efectivoCents);
+      if (efectivoCents > 0) pagosMH.push({ codigo: '01', montoPago: efectivoCents / 100 });
+      if (tarjetaCents > 0) pagosMH.push({ codigo: '03', montoPago: tarjetaCents / 100 });
     } else {
-      if (metodo === 'efectivo') montoEfectivo += monto;
       const ref = (pago.referencia_tarjeta as string)
         || (pago.referencia_transferencia as string)
         || (pago.hash_bitcoin as string)
         || (pago.referencia_cheque as string)
         || null;
-      pagosMH.push({ codigo: codigoMH, montoPago: monto, referencia: ref });
+      if (montoFiscalCents > 0) {
+        pagosMH.push({ codigo: codigoMH, montoPago: montoFiscalCents / 100, referencia: ref });
+      }
     }
+    restanteFiscalCents -= montoFiscalCents;
+  }
+
+  if (restanteFiscalCents !== 0) {
+    throw {
+      status: 400,
+      mensaje: 'La suma de pagos fiscales no coincide con el total del DTE.',
+    };
   }
 
   const payloadBase: Record<string, unknown> = {
     items: cuerpoItems,
     pagos: pagosMH,
-    metodo_pago: 'mixto',
-    monto_efectivo: Math.round(montoEfectivo * 100) / 100,
-    monto_tarjeta: 0,
+    metodo_pago: pagosMH.length > 1 ? 'mixto' : pagosMH[0]?.codigo === '03' ? 'tarjeta' : 'efectivo',
     orden_referencia: orden.numero_orden?.toString() || null,
     cod_estable_mh: tenant.cod_estable_mh || null,
     cod_punto_venta_mh: tenant.cod_punto_venta_mh || null,
@@ -324,7 +340,7 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
   // SEGURIDAD: nunca transportar ni persistir credenciales del certificado.
   const payloadSeguro = limpiarPayloadSecreto(payload);
 
-  logger.info('Emitiendo DTE desde POS', { ordenId, tipoDte, endpoint, items: cuerpoItems.length, totalSinPropina });
+  logger.info('Emitiendo DTE desde POS', { ordenId, tipoDte, endpoint, items: cuerpoItems.length, totalFiscal: totalFiscalCents / 100 });
 
   let resultado: Record<string, unknown>;
   try {

@@ -29,8 +29,8 @@ export const handler = async (req: Request, res: Response) => {
     }
 
     const { rows: cached } = await query(
-      'SELECT response FROM idempotency_keys WHERE key = $1',
-      [idempotencyKey]
+      'SELECT response FROM idempotency_keys WHERE tenant_id = $1 AND key = $2',
+      [req.usuario!.tenant_id, idempotencyKey]
     );
 
     if (cached.length > 0) {
@@ -52,8 +52,8 @@ export const handler = async (req: Request, res: Response) => {
 
     if (idempotencyKey) {
       await query(
-        'INSERT INTO idempotency_keys (key, endpoint, response) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-        [idempotencyKey, '/ordenes/:id/pagar', JSON.stringify({ status, body })]
+        'INSERT INTO idempotency_keys (tenant_id, key, endpoint, response) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+        [req.usuario!.tenant_id, idempotencyKey, '/ordenes/:id/pagar', JSON.stringify({ status, body })]
       );
     }
 
