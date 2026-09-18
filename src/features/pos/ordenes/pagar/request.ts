@@ -25,7 +25,12 @@ const metodoPagoItem = Joi.object({
     }),
   monto: Joi.number()
     .positive()
-    .precision(2)
+    .custom((value, helpers) => {
+      if (!Number.isFinite(value) || Math.round(value * 100) !== value * 100) {
+        return helpers.error('number.precision');
+      }
+      return value;
+    })
     .required()
     .messages({
       'any.required': 'El monto es requerido.',

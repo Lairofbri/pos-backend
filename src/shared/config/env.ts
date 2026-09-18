@@ -51,7 +51,6 @@ export const env = {
   DTE_SERVICE_URL: process.env.DTE_SERVICE_URL ?? 'http://localhost:4000',
   DTE_API_KEY: process.env.DTE_API_KEY ?? '',
   DTE_TIMEOUT: opcionalInt('DTE_TIMEOUT', 10000),
-  DTE_PASSWORD_PRI: process.env.DTE_PASSWORD_PRI ?? '',
 } as const;
 
 export type Env = typeof env;
