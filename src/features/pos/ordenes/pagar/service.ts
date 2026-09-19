@@ -2,7 +2,6 @@ import { getClient } from '../../../../shared/config/database.js';
 import { logger } from '../../../../shared/utils/logger.js';
 import { obtenerOrdenShared } from '../../shared.js';
 import { io } from '../../../../server.js';
-import { evaluarYNotificar } from '../../../alertas/notificar.js';
 import { fromCents, sumCents, toCents } from '../../../../shared/utils/money.js';
 
 interface MetodoPago {
