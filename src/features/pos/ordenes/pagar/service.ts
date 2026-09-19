@@ -3,6 +3,7 @@ import { logger } from '../../../../shared/utils/logger.js';
 import { obtenerOrdenShared } from '../../shared.js';
 import { io } from '../../../../server.js';
 import { evaluarYNotificar } from '../../../alertas/notificar.js';
+import { fromCents, sumCents, toCents } from '../../../../shared/utils/money.js';
 
 interface MetodoPago {
   metodo: string;
@@ -37,23 +38,27 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
   }
 
   const metodos = datos.metodos;
-  const totalOrden = Number(orden.total) || 0;
-  const propina = Number(orden.propina_monto) || 0;
-  const montoAPagar = Number((totalOrden + propina).toFixed(2));
+  const totalFiscalCents = toCents(orden.total || 0, 'total de la orden');
+  const propinaCents = toCents(orden.propina_monto || 0, 'propina');
+  const montoAPagarCents = totalFiscalCents + propinaCents;
+  const totalPagadoCents = sumCents(metodos.map(m => m.monto), 'monto del pago');
 
-  const totalPagado = Number(metodos.reduce((sum, m) => sum + m.monto, 0).toFixed(2));
-
-  if (totalPagado < montoAPagar) {
+  if (totalPagadoCents < montoAPagarCents) {
     throw {
       status: 400,
-      mensaje: `El monto pagado ($${totalPagado}) es menor al total a pagar con propina ($${montoAPagar}).`,
+      mensaje: `El monto pagado ($${fromCents(totalPagadoCents).toFixed(2)}) es menor al total a pagar con propina ($${fromCents(montoAPagarCents).toFixed(2)}).`,
     };
   }
 
   const tieneEfectivo = metodos.some(m => m.metodo === 'efectivo');
-  const vuelto = tieneEfectivo
-    ? Number((totalPagado - montoAPagar).toFixed(2))
-    : 0;
+  const excedenteCents = totalPagadoCents - montoAPagarCents;
+  if (excedenteCents > 0 && !tieneEfectivo) {
+    throw {
+      status: 400,
+      mensaje: 'No se permiten pagos superiores al total cuando no existe un pago en efectivo.',
+    };
+  }
+  const vueltoCents = tieneEfectivo ? excedenteCents : 0;
 
   const client = await getClient();
   try {
@@ -65,7 +70,7 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
       const metodo = metodos[i];
       const montos = buildMontoParams(metodo);
       const isCashRow = metodo.metodo === 'efectivo';
-      const rowVuelto = isCashRow ? vuelto : 0;
+      const rowVuelto = isCashRow ? vueltoCents : 0;
 
       const { rows } = await client.query(
         `INSERT INTO pagos
@@ -93,7 +98,7 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
           montos.monto_bonos,
           montos.monto_vales,
           montos.monto_otro,
-          metodo.monto, rowVuelto,
+          fromCents(toCents(metodo.monto, 'monto del pago')), fromCents(rowVuelto),
           ['tarjeta', 'tarjeta_debito', 'tarjeta_credito', 'tarjeta_empresarial'].includes(metodo.metodo) ? (metodo.referencia || null) : null,
           metodo.metodo === 'transferencia' ? (metodo.referencia || null) : null,
           (metodo.metodo === 'transferencia' || metodo.metodo === 'cheque') ? (metodo.banco || null) : null,
@@ -338,8 +343,8 @@ export const registrarPago = async ({ tenantId, ordenId, usuarioId, datos }: { t
     logger.info('Pago registrado', {
       orden_id: ordenId,
       metodos: metodos.map(m => m.metodo),
-      total_pagado: totalPagado,
-      vuelto,
+      total_pagado: fromCents(totalPagadoCents),
+      vuelto: fromCents(vueltoCents),
     });
 
     return {

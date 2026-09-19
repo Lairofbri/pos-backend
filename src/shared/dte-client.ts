@@ -27,8 +27,9 @@ export const crearClienteDte = (baseURL: string, apiKey: string, tenantId?: stri
     (error) => {
       if (error.response) {
         const mensaje = error.response.data?.mensaje || `DTE Service error: ${error.response.status}`;
+        const detalles = error.response.data?.detalles;
         logger.error('DTE Service respondió con error', { status: error.response.status, mensaje, ruta: error.config?.url });
-        throw { status: error.response.status, mensaje };
+        throw { status: error.response.status, mensaje, detalles };
       }
       if (error.code === 'ECONNREFUSED') {
         logger.error('DTE Service no disponible', { url: baseURL });
@@ -59,7 +60,19 @@ export const obtenerClientePorTenant = async (tenantId: string) => {
 
   const tenant = rows[0] as TenantDteConfig | undefined;
   const baseURL = tenant?.dte_service_url || env.DTE_SERVICE_URL;
-  const apiKey = tenant?.dte_api_key || env.DTE_API_KEY;
+
+  // Fase 2 — Aislamiento multi-tenant:
+  // En producción NO existe fallback global de API Key. Cada tenant debe
+  // tener su propia clave para operar el DTE Service. En desarrollo se
+  // permite la clave global para facilitar el flujo local.
+  let apiKey = tenant?.dte_api_key || null;
+  if (!apiKey) {
+    if (env.ES_PRODUCCION) {
+      logger.error('Tenant sin API Key DTE configurada en producción', { tenantId });
+      throw { status: 500, mensaje: 'Tenant sin API Key de facturación configurada.' };
+    }
+    apiKey = env.DTE_API_KEY;
+  }
 
   return crearClienteDte(baseURL, apiKey, tenantId);
 };

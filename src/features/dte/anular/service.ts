@@ -1,9 +1,11 @@
 import { query } from '../../../shared/config/database.js';
 import { obtenerClientePorTenant } from '../../../shared/dte-client.js';
 import { logger } from '../../../shared/utils/logger.js';
+import { limpiarPayloadSecreto } from '../payload-seguro.js';
 
 export const anular = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
-  const payload = {
+  // SEGURIDAD: el POS no transporta credenciales del certificado.
+  const payload = limpiarPayloadSecreto({
     codigo_generacion: datos.codigo_generacion,
     tipo_dte: datos.tipo_dte,
     motivo_tipo: datos.motivo_tipo,
@@ -11,8 +13,7 @@ export const anular = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
     nombre_responsable: datos.nombre_responsable,
     tipo_doc_responsable: datos.tipo_doc_responsable,
     num_doc_responsable: datos.num_doc_responsable,
-    password_pri: datos.password_pri,
-  };
+  });
 
   logger.info('Anulando DTE desde POS', { codigo_generacion: datos.codigo_generacion });
 

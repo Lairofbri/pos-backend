@@ -1,7 +1,8 @@
 import { query, getClient } from '../../../shared/config/database.js';
 import { obtenerClientePorTenant } from '../../../shared/dte-client.js';
 import { logger } from '../../../shared/utils/logger.js';
-import { env } from '../../../shared/config/env.js';
+import { limpiarPayloadSecreto } from '../payload-seguro.js';
+import { mapearEstadoFiscal, extraerResultado } from '../estados.js';
 
 const MAPA_TIPO_DOC: Record<string, string> = {
   dui: '13', nit: '36', pasaporte: '03', carnet_residente: '02', otro: '37',
@@ -44,10 +45,76 @@ const ENDPOINTS: Record<string, string> = {
   '14': '/api/dte/emitir/fse',
 };
 
+// Fase 3 — estados fiscales explícitos del DTE en el POS.
+// (mapearEstadoFiscal y extraerResultado provienen de ../estados.ts)
+
+// Fase 3 — idempotencia: si ya existe un DTE para (tenant, orden, tipo),
+// reutilizarlo en lugar de volver a emitir. No se consume correlativo.
+const buscarDTEExistente = async (tenantId: string, ordenId: string, tipoDte: string) => {
+  const { rows } = await query(
+    `SELECT * FROM dtes_orden
+     WHERE tenant_id = $1 AND orden_id = $2 AND tipo_dte = $3
+     ORDER BY creado_en DESC
+     LIMIT 1`,
+    [tenantId, ordenId, tipoDte]
+  );
+  return rows[0] || null;
+};
+
+const mapearRespuestaExistente = (dte: Record<string, unknown>) => ({
+  codigo_generacion: dte.codigo_generacion || null,
+  numero_control: dte.numero_control || null,
+  sello_recepcion: dte.sello_recepcion || null,
+  estado: dte.estado || 'pendiente',
+  reutilizado: true,
+});
+
+const persistirRechazo = async (
+  tenantId: string,
+  ordenId: string,
+  tipoDte: string,
+  payload: Record<string, unknown>,
+  mensaje: string,
+  detalles?: unknown
+) => {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE ordenes
+       SET dte_estado = 'rechazado',
+           dte_emitido_en = COALESCE(dte_emitido_en, NOW())
+       WHERE id = $1`,
+      [ordenId]
+    );
+    await client.query(
+      `INSERT INTO dtes_orden (orden_id, tenant_id, tipo_dte, estado, json_envio, errores, creado_en)
+       VALUES ($1, $2, $3, 'rechazado', $4, $5, NOW())
+       ON CONFLICT (tenant_id, orden_id, tipo_dte) DO UPDATE
+       SET estado = 'rechazado', errores = EXCLUDED.errores, actualizado_en = NOW()`,
+      [ordenId, tenantId, tipoDte, JSON.stringify(payload), JSON.stringify({ mensaje, detalles })]
+    );
+    await client.query('COMMIT');
+  } catch (errTx) {
+    await client.query('ROLLBACK');
+    logger.error('Error al persistir rechazo DTE', { error: (errTx as Error).message, ordenId });
+  } finally {
+    client.release();
+  }
+};
+
 type OrdenRow = Record<string, unknown>;
 type ItemRow = Record<string, unknown>;
 type PagoRow = Record<string, unknown>;
 type TenantRow = { cod_estable_mh: string | null; cod_punto_venta_mh: string | null };
+
+const toCents = (value: unknown): number => {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw { status: 400, mensaje: 'La orden contiene un monto monetario inválido.' };
+  }
+  return Math.round(amount * 100);
+};
 
 const obtenerOrdenCompleta = async (tenantId: string, ordenId: string) => {
   const { rows: ordenes } = await query(
@@ -112,13 +179,20 @@ const mapearItems = (items: ItemRow[]) => {
 export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
   const ordenId = datos.orden_id as string;
   const tipoDte = (datos.tipo_dte as string) || '01';
-  const passwordPri = (datos.password_pri as string) || env.DTE_PASSWORD_PRI;
-
-  if (!passwordPri) {
-    throw { status: 400, mensaje: 'password_pri es requerido. Configura DTE_PASSWORD_PRI en el entorno.' };
-  }
 
   const { orden, items, pagos } = await obtenerOrdenCompleta(tenantId, ordenId);
+
+  // Fase 3 — idempotencia: repetir la misma petición produce la misma respuesta.
+  // Si ya se emitió un DTE para (tenant, orden, tipo), NO volver a emitir.
+  const existente = await buscarDTEExistente(tenantId, ordenId, tipoDte);
+  if (existente) {
+    logger.info('DTE ya emitido para esta orden — reutilizando', {
+      ordenId,
+      tipoDte,
+      estado: existente.estado,
+    });
+    return mapearRespuestaExistente(existente);
+  }
 
   const { rows: tenantRows } = await query(
     'SELECT cod_estable_mh, cod_punto_venta_mh FROM tenants WHERE id = $1',
@@ -126,47 +200,57 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
   );
   const tenant = (tenantRows[0] || {}) as TenantRow;
 
-  const totalOrden = Number(orden.total) || 0;
-  const propina = Number(orden.propina) || 0;
-  const totalSinPropina = totalOrden - propina;
+  const totalFiscalCents = toCents(orden.total);
 
   const cuerpoItems = mapearItems(items);
 
-  // Construir pagos[] con códigos MH (CAT-007)
+  // Construir pagos fiscales con códigos MH (CAT-007). La propina y el vuelto
+  // son importes operativos y no forman parte de los pagos del DTE.
   const pagosMH: Array<{ codigo: string; montoPago: number; referencia?: string | null }> = [];
-  let montoEfectivo = 0;
+  let restanteFiscalCents = totalFiscalCents;
   for (const pago of pagos) {
     const metodo = (pago.metodo as string) || 'efectivo';
     const codigoMH = MAPA_METODO_MH[metodo] || '99';
-    const monto = Number(pago.total_pagado) || 0;
+    const montoRecibidoCents = toCents(pago.total_pagado);
+    const vueltoCents = toCents(pago.vuelto);
+    const disponibleCents = Math.max(0, montoRecibidoCents - vueltoCents);
+    const montoFiscalCents = Math.min(restanteFiscalCents, disponibleCents);
 
     if (metodo === 'mixto') {
-      const ef = Number(pago.monto_efectivo) || 0;
-      const tj = Number(pago.monto_tarjeta) || 0;
-      if (ef > 0) pagosMH.push({ codigo: '01', montoPago: ef });
-      if (tj > 0) pagosMH.push({ codigo: '03', montoPago: tj });
-      montoEfectivo += ef;
+      const efectivoCents = Math.min(toCents(pago.monto_efectivo), montoFiscalCents);
+      const tarjetaCents = Math.min(toCents(pago.monto_tarjeta), montoFiscalCents - efectivoCents);
+      if (efectivoCents > 0) pagosMH.push({ codigo: '01', montoPago: efectivoCents / 100 });
+      if (tarjetaCents > 0) pagosMH.push({ codigo: '03', montoPago: tarjetaCents / 100 });
     } else {
-      if (metodo === 'efectivo') montoEfectivo += monto;
       const ref = (pago.referencia_tarjeta as string)
         || (pago.referencia_transferencia as string)
         || (pago.hash_bitcoin as string)
         || (pago.referencia_cheque as string)
         || null;
-      pagosMH.push({ codigo: codigoMH, montoPago: monto, referencia: ref });
+      if (montoFiscalCents > 0) {
+        pagosMH.push({ codigo: codigoMH, montoPago: montoFiscalCents / 100, referencia: ref });
+      }
     }
+    restanteFiscalCents -= montoFiscalCents;
+  }
+
+  if (restanteFiscalCents !== 0) {
+    throw {
+      status: 400,
+      mensaje: 'La suma de pagos fiscales no coincide con el total del DTE.',
+    };
   }
 
   const payloadBase: Record<string, unknown> = {
     items: cuerpoItems,
     pagos: pagosMH,
-    metodo_pago: 'mixto',
-    monto_efectivo: Math.round(montoEfectivo * 100) / 100,
-    monto_tarjeta: 0,
-    password_pri: passwordPri,
+    metodo_pago: pagosMH.length > 1 ? 'mixto' : pagosMH[0]?.codigo === '03' ? 'tarjeta' : 'efectivo',
     orden_referencia: orden.numero_orden?.toString() || null,
     cod_estable_mh: tenant.cod_estable_mh || null,
     cod_punto_venta_mh: tenant.cod_punto_venta_mh || null,
+    // Fase 3 — clave idempotente: tenant + orden + tipo. Los reintentos
+    // reutilizan el mismo DTE en el dte-service (sin nuevo correlativo).
+    idempotency_key: `${ordenId}:${tipoDte}`,
   };
 
   let payload: Record<string, unknown>;
@@ -258,48 +342,68 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
 
   const endpoint = ENDPOINTS[tipoDte];
 
-  logger.info('Emitiendo DTE desde POS', { ordenId, tipoDte, endpoint, items: cuerpoItems.length, pagos: pagosMH, totalSinPropina });
+  // SEGURIDAD: nunca transportar ni persistir credenciales del certificado.
+  const payloadSeguro = limpiarPayloadSecreto(payload);
+
+  logger.info('Emitiendo DTE desde POS', { ordenId, tipoDte, endpoint, items: cuerpoItems.length, totalFiscal: totalFiscalCents / 100 });
 
   let resultado: Record<string, unknown>;
   try {
     const cliente = await obtenerClientePorTenant(tenantId);
-    const resp = await cliente.post(endpoint, payload);
-    resultado = resp as unknown as Record<string, unknown>;
+    const resp = await cliente.post(endpoint, payloadSeguro);
+    resultado = extraerResultado(resp);
   } catch (err) {
-    const e = err as { mensaje?: string };
-    await encolarPendiente(tenantId, ordenId, tipoDte, payload, e.mensaje || 'Error al emitir DTE');
-    throw { status: (err as { status?: number }).status || 502, mensaje: e.mensaje || 'Error al emitir DTE.' };
+    const e = err as { status?: number; mensaje?: string; detalles?: unknown };
+    const status = e.status || 502;
+    const mensaje = e.mensaje || 'Error al emitir DTE';
+
+    if (status === 422) {
+      // Rechazo fiscal: estado final, NO se reintenta automáticamente.
+      await persistirRechazo(tenantId, ordenId, tipoDte, payloadSeguro, mensaje, e.detalles);
+      logger.warn('DTE rechazado por Hacienda', { ordenId, tipoDte, mensaje });
+    } else {
+      // Error transitorio: encolar para reintento seguro por el cron.
+      await encolarPendiente(tenantId, ordenId, tipoDte, payloadSeguro, mensaje);
+    }
+
+    throw { status, mensaje, detalles: e.detalles };
   }
 
   const client = await getClient();
+  const estadoFiscal = mapearEstadoFiscal(resultado.estado as string);
   try {
     await client.query('BEGIN');
 
-     const estadoDte = String(resultado.estado || 'emitido');
-
-     await client.query(
-      `UPDATE ordenes
-       SET dte_codigo_generacion = $1,
-           dte_numero_control = $2,
-           dte_estado = $3,
-           dte_emitido_en = NOW()
+    await client.query(
+       `UPDATE ordenes
+        SET dte_codigo_generacion = $1,
+            dte_numero_control = $2,
+            dte_estado = $3,
+            dte_emitido_en = NOW()
         WHERE id = $4`,
-       [resultado.codigo_generacion || null, resultado.numero_control || null, estadoDte, ordenId]
-     );
+      [resultado.codigo_generacion || null, resultado.numero_control || null, estadoFiscal, ordenId]
+    );
 
     await client.query(
-       `INSERT INTO dtes_orden (orden_id, tenant_id, tipo_dte, codigo_generacion, numero_control, estado, json_envio, json_respuesta, creado_en)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-       [
-         ordenId, tenantId, tipoDte,
-         resultado.codigo_generacion || null, resultado.numero_control || null, estadoDte,
-         JSON.stringify(payload), JSON.stringify(resultado),
-       ]
+      `INSERT INTO dtes_orden (orden_id, tenant_id, tipo_dte, codigo_generacion, numero_control, estado, json_envio, json_respuesta, creado_en)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+       ON CONFLICT (tenant_id, orden_id, tipo_dte) DO UPDATE
+       SET codigo_generacion = EXCLUDED.codigo_generacion,
+           numero_control = EXCLUDED.numero_control,
+           estado = EXCLUDED.estado,
+           json_respuesta = EXCLUDED.json_respuesta,
+           actualizado_en = NOW()`,
+      [
+        ordenId, tenantId, tipoDte,
+        resultado.codigo_generacion || null, resultado.numero_control || null,
+        estadoFiscal,
+        JSON.stringify(payloadSeguro), JSON.stringify(resultado),
+      ]
     );
 
     await client.query('COMMIT');
 
-    logger.info('DTE emitido exitosamente desde POS', { ordenId, codigoGeneracion: resultado.codigo_generacion, numeroControl: resultado.numero_control });
+    logger.info('DTE emitido exitosamente desde POS', { ordenId, codigoGeneracion: resultado.codigo_generacion, numeroControl: resultado.numero_control, estado: estadoFiscal });
   } catch (errTx) {
     await client.query('ROLLBACK');
     logger.error('Error al guardar referencia DTE en orden', { error: (errTx as Error).message, ordenId });
@@ -309,21 +413,23 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
   }
 
   return {
-    estado: String(resultado.estado || 'emitido'),
     codigo_generacion: resultado.codigo_generacion,
     numero_control: resultado.numero_control,
     sello_recepcion: resultado.sello_recepcion || null,
+    estado: estadoFiscal,
   };
 };
 
 async function encolarPendiente(tenantId: string, ordenId: string, tipoDte: string, payload: Record<string, unknown>, error: string) {
   try {
+    // SEGURIDAD: defensa en profundidad — jamás persistir secretos en la cola.
+    const payloadSeguro = limpiarPayloadSecreto(payload);
     await query(
       `INSERT INTO dte_pendientes (orden_id, tenant_id, tipo_dte, payload, ultimo_error, intentos)
        VALUES ($1, $2, $3, $4, $5, 1)
-       ON CONFLICT (orden_id) DO UPDATE
+       ON CONFLICT (tenant_id, orden_id, tipo_dte) DO UPDATE
        SET intentos = dte_pendientes.intentos + 1, ultimo_error = $5, actualizado_en = NOW()`,
-      [ordenId, tenantId, tipoDte, JSON.stringify(payload), error]
+      [ordenId, tenantId, tipoDte, JSON.stringify(payloadSeguro), error]
     );
     logger.warn('DTE encolado para reintento', { ordenId, tipoDte, error });
   } catch (err) {
