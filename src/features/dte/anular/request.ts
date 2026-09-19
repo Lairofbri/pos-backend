@@ -19,9 +19,6 @@ export const anularDTESchema = Joi.object({
   nombre_responsable: Joi.string().min(1).max(100).required(),
   tipo_doc_responsable: Joi.string().valid('13', '02', '03', '36', '37').required(),
   num_doc_responsable: Joi.string().min(3).max(25).required(),
-  password_pri: Joi.string().min(1).required().messages({
-    'any.required': 'La contraseña del certificado (password_pri) es requerida.',
-  }),
 }).required();
 
 export type AnularDTEBody = {
@@ -32,5 +29,4 @@ export type AnularDTEBody = {
   nombre_responsable: string;
   tipo_doc_responsable: string;
   num_doc_responsable: string;
-  password_pri: string;
 };

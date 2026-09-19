@@ -1,4 +1,5 @@
 import { query } from '../../../shared/config/database.js';
+import { enriquecerComponentes, listarComponentesCombo, resumenCombo } from '../shared.js';
 
 type ComboRow = {
   id: string;
@@ -6,13 +7,6 @@ type ComboRow = {
   precio: number;
   activo: boolean;
   creado_en: string;
-};
-
-type ProductoRow = {
-  producto_id: string;
-  cantidad: number;
-  nombre: string;
-  precio: number;
 };
 
 export const listarCombos = async ({ tenantId, soloActivos = true }: { tenantId: string; soloActivos?: boolean }) => {
@@ -31,14 +25,11 @@ export const listarCombos = async ({ tenantId, soloActivos = true }: { tenantId:
   const combos = rows as unknown as ComboRow[];
 
   for (const combo of combos) {
-    const { rows: productos } = await query(
-      `SELECT cp.producto_id, cp.cantidad, p.nombre, p.precio
-       FROM combo_productos cp
-       JOIN productos p ON p.id = cp.producto_id
-       WHERE cp.combo_id = $1 AND cp.tenant_id = $2`,
-      [combo.id, tenantId]
-    );
-    (combo as Record<string, unknown>).productos = productos as unknown as ProductoRow[];
+    const componentes = await listarComponentesCombo({ tenantId, comboId: combo.id });
+    const productos = await enriquecerComponentes({ tenantId, componentes });
+    const resumen = resumenCombo(productos);
+
+    Object.assign(combo, { productos, ...resumen });
   }
 
   return combos;

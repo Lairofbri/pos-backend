@@ -83,16 +83,16 @@ ALTER TABLE cajas
 -- 5. Sembrar nuevos métodos en catálogo (tenant demo)
 -- ─────────────────────────────────────────────
 INSERT INTO catalogos (tenant_id, grupo, valor, label, orden) VALUES
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'tarjeta_debito',       'Tarjeta Débito',       4),
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'tarjeta_credito',      'Tarjeta Crédito',      5),
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'transferencia',        'Transferencia',        6),
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'bitcoin',              'Bitcoin',              7),
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'monedero_electronico', 'Monedero Electrónico', 8),
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'cheque',               'Cheque',               9),
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'tarjeta_empresarial',  'Tarjeta Empresarial',  10),
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'bonos',                'Bonos',                11),
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'vales',                'Vales',                12),
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'otro',                 'Otro',                 13)
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'tarjeta_debito',       'Tarjeta Débito',       4),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'tarjeta_credito',      'Tarjeta Crédito',      5),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'transferencia',        'Transferencia',        6),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'bitcoin',              'Bitcoin',              7),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'monedero_electronico', 'Monedero Electrónico', 8),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'cheque',               'Cheque',               9),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'tarjeta_empresarial',  'Tarjeta Empresarial',  10),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'bonos',                'Bonos',                11),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'vales',                'Vales',                12),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'otro',                 'Otro',                 13)
 ON CONFLICT (tenant_id, grupo, valor) DO NOTHING;
 
 -- ─────────────────────────────────────────────

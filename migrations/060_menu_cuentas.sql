@@ -10,6 +10,4 @@ SELECT
     (SELECT m.id FROM menus m WHERE m.tenant_id = t.id AND m.titulo = 'Administración' LIMIT 1),
     TRUE
 FROM tenants t
-WHERE NOT EXISTS (
-    SELECT 1 FROM menus m WHERE m.tenant_id = t.id AND m.ruta = '/admin/cuentas'
-);
+ON CONFLICT (id) DO NOTHING;

@@ -1,4 +1,4 @@
-const { describe, it, before } = require('node:test')
+const { describe, it } = require('node:test')
 const assert = require('node:assert/strict')
 const request = require('supertest')
 const express = require('express')
@@ -10,43 +10,48 @@ const proxyquire = require('proxyquire').noPreserveCache()
 const V4_UUID = () => crypto.randomUUID()
 
 process.env.NODE_ENV = 'test'
-process.env.JWT_SECRET = 'test-secret-1234567890'
-process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-0987654321'
+process.env.JWT_SECRET = 'test-secret-' + crypto.randomBytes(48).toString('hex')
+process.env.JWT_REFRESH_SECRET = 'test-refresh-' + crypto.randomBytes(48).toString('hex')
 
 function buildMockService(overrides = {}) {
   const defaults = {
-    loginEmail: () => Promise.resolve({ access_token: 'test-token', usuario: { id: 'u1', email: 'admin@test.com', nombre: 'Admin' } }),
-    loginPin: () => Promise.resolve({ access_token: 'pin-token', usuario: { id: 'u2', nombre: 'Cashier' } }),
-    refreshAccessToken: () => Promise.resolve({ access_token: 'refreshed-token' }),
+    loginEmail: () => Promise.resolve({ access_token: 'test-token', refresh_token: 'refresh-token', usuario: { id: 'u1', email: 'admin@test.com', nombre: 'Admin' } }),
+    loginPin: () => Promise.resolve({ access_token: 'pin-token', refresh_token: 'refresh-token', usuario: { id: 'u2', nombre: 'Cashier' } }),
+    refreshAccessToken: () => Promise.resolve({ access_token: 'refreshed-token', refresh_token: 'new-refresh-token' }),
     logout: () => Promise.resolve(),
     obtenerMe: () => Promise.resolve({ id: 'u1', nombre: 'Admin', email: 'admin@test.com' }),
-    listarTenants: () => Promise.resolve([{ id: 'a1', nombre: 'Test' }]),
+    listarTenants: () => Promise.resolve({ tenants: [{ id: 'a1', nombre: 'Test' }], sucursales: [] }),
     listarUsuariosParaPin: () => Promise.resolve([]),
-    listarUsuarios: () => Promise.resolve([]),
-    obtenerUsuario: () => { throw { status: 404, mensaje: 'No encontrado' } },
-    crearUsuario: () => Promise.resolve({}),
-    actualizarUsuario: () => Promise.resolve({}),
-    resetearPin: () => Promise.resolve(),
-    cambiarPin: () => Promise.resolve(),
-    cambiarPassword: () => Promise.resolve(),
   }
   return { ...defaults, ...overrides }
 }
 
+function loadHandler(relPath, mockService) {
+  return proxyquire(`../../dist/features/auth/${relPath}`, {
+    '../shared.js': mockService,
+  })
+}
+
 function buildAuthApp(mockOverrides) {
   const mockService = buildMockService(mockOverrides)
-  const authController = proxyquire('../../src/modules/auth/auth.controller', {
-    './auth.service': mockService,
-  })
-  const { autenticar } = require('../../src/middlewares/auth.middleware')
+  const emailHandler = loadHandler('email/handler.js', mockService)
+  const pinHandler = loadHandler('pin/handler.js', mockService)
+  const refreshHandler = loadHandler('refresh/handler.js', mockService)
+  const logoutHandler = loadHandler('logout/handler.js', mockService)
+  const meHandler = loadHandler('me/handler.js', mockService)
+  const empresasHandler = loadHandler('empresas/listar/handler.js', mockService)
+  const pinListHandler = loadHandler('pin-list/handler.js', mockService)
+
+  const { autenticar } = require('../../dist/shared/middlewares/auth.middleware.js')
+
   const router = express.Router()
-  router.get('/empresas', authController.listarTenants)
-  router.post('/auth/login', authController.loginEmail)
-  router.post('/auth/login-pin', authController.loginPin)
-  router.post('/auth/refresh', authController.refresh)
-  router.get('/usuarios/pin-list', authController.listarUsuariosParaPin)
-  router.post('/auth/logout', autenticar, authController.logout)
-  router.get('/auth/me', autenticar, authController.me)
+  router.get('/empresas', empresasHandler.handler)
+  router.post('/auth/login', emailHandler.handler)
+  router.post('/auth/login-pin', pinHandler.handler)
+  router.post('/auth/refresh', refreshHandler.handler)
+  router.get('/usuarios/pin-list', pinListHandler.handler)
+  router.post('/auth/logout', autenticar, logoutHandler.handler)
+  router.get('/auth/me', autenticar, meHandler.handler)
 
   const app = express()
   app.use(express.json({ limit: '2mb' }))
@@ -103,7 +108,6 @@ describe('Auth API - Integration Tests', () => {
         .set('X-Tenant-Id', V4_UUID())
         .send({ usuario_id: V4_UUID(), pin: '123456' })
       assert.equal(res.status, 200)
-      assert.equal(res.status, 200)
       assert.equal(res.body.data.access_token, 'pin-token')
     })
 
@@ -119,7 +123,7 @@ describe('Auth API - Integration Tests', () => {
   describe('GET /api/auth/me', () => {
     it('returns user data with valid token', async () => {
       const app = buildAuthApp()
-      const token = jwt.sign({ sub: 'u1', tenant_id: 't1', rol: 'admin' }, process.env.JWT_SECRET, { expiresIn: '1h' })
+      const token = jwt.sign({ sub: 'u1', tenant_id: 't1', rol: 'admin', nombre: 'Admin', email: 'admin@test.com' }, process.env.JWT_SECRET, { expiresIn: '1h' })
       const res = await request(app)
         .get('/api/auth/me')
         .set('Authorization', `Bearer ${token}`)
@@ -152,7 +156,7 @@ describe('Auth API - Integration Tests', () => {
   describe('POST /api/auth/logout', () => {
     it('returns 200', async () => {
       const app = buildAuthApp()
-      const token = jwt.sign({ sub: 'u1' }, process.env.JWT_SECRET, { expiresIn: '1h' })
+      const token = jwt.sign({ sub: 'u1', tenant_id: 't1', rol: 'admin', nombre: 'Admin', email: 'admin@test.com' }, process.env.JWT_SECRET, { expiresIn: '1h' })
       const res = await request(app)
         .post('/api/auth/logout')
         .set('Authorization', `Bearer ${token}`)

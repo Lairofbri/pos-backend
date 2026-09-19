@@ -6,10 +6,10 @@
 
 -- Demo tenant
 INSERT INTO catalogos (tenant_id, grupo, valor, label, orden) VALUES
-    ('a0000000-0000-0000-0000-000000000001', 'estados_mesa', 'disponible', 'Disponible', 1),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_mesa', 'ocupada', 'Ocupada', 2),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_mesa', 'reservada', 'Reservada', 3),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_mesa', 'inactiva', 'Inactiva', 4)
+    ('a0000000-0000-4000-8000-000000000001', 'estados_mesa', 'disponible', 'Disponible', 1),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_mesa', 'ocupada', 'Ocupada', 2),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_mesa', 'reservada', 'Reservada', 3),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_mesa', 'inactiva', 'Inactiva', 4)
 ON CONFLICT (tenant_id, grupo, valor) DO NOTHING;
 
 -- Actualizar procedimiento para nuevos tenants

@@ -1,6 +1,7 @@
 import { getClient } from '../../../../shared/config/database.js';
 import { logger } from '../../../../shared/utils/logger.js';
 import { incrementarStock, descontarStock } from '../../stock-service.js';
+import { evaluarYNotificar } from '../../../alertas/notificar.js';
 
 export const revertirMovimiento = async ({
   tenantId,
@@ -91,6 +92,8 @@ export const revertirMovimiento = async ({
     );
 
     await client.query('COMMIT');
+
+    void evaluarYNotificar(tenantId);
 
     logger.info('Movimiento revertido', {
       movimiento_original_id: movimientoId,

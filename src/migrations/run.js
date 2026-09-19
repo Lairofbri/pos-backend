@@ -52,7 +52,7 @@ const ejecutarMigraciones = async () => {
 
   const archivos = fs
     .readdirSync(carpetaMigraciones)
-    .filter((f) => f.endsWith('.sql'))
+    .filter((f) => f.endsWith('.sql') && !f.startsWith('999_') && f !== 'clean-demo.sql')
     .sort(); // Ordenar numéricamente por nombre: 001_, 002_, etc.
 
   let ejecutadas_ahora = 0;
@@ -75,8 +75,9 @@ const ejecutarMigraciones = async () => {
         logger.debug(`Migración sin cambios, saltando: ${archivo}`);
         continue;
       }
-      logger.info(`Migración modificada, re-ejecutando: ${archivo}`);
-      await query('DELETE FROM _migraciones WHERE archivo = $1', [archivo]);
+      logger.warn(`Migración modificada después de ejecutarse; no se reejecuta: ${archivo}`);
+      await query('UPDATE _migraciones SET hash = $1 WHERE archivo = $2', [hashActual, archivo]);
+      continue;
     }
 
     const sql = fs.readFileSync(rutaCompleta, 'utf8');

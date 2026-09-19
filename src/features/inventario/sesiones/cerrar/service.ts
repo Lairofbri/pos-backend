@@ -1,6 +1,7 @@
 import { query, getClient } from '../../../../shared/config/database.js';
 import { fijarStock } from '../../stock-service.js';
 import { logger } from '../../../../shared/utils/logger.js';
+import { evaluarYNotificar } from '../../../alertas/notificar.js';
 
 export const cerrarSesion = async ({
   sesionId,
@@ -84,6 +85,8 @@ export const cerrarSesion = async ({
     );
 
     await client.query('COMMIT');
+
+    void evaluarYNotificar(tenantId);
 
     logger.info('Sesión de inventario cerrada', {
       sesion_id: sesionId,

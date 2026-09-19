@@ -14,6 +14,14 @@ CREATE INDEX IF NOT EXISTS idx_clientes_depto ON clientes(tenant_id, departament
 CREATE INDEX IF NOT EXISTS idx_clientes_muni ON clientes(tenant_id, municipio);
 
 -- ─────────────────────────────────────────────
+-- Ampliar CHECK de tipo_documento para incluir 'otro'
+-- El seed de "Consumidor Final" usa 'otro' (sin documento real, mapeado a MH '37' en el DTE)
+-- ─────────────────────────────────────────────
+ALTER TABLE clientes DROP CONSTRAINT IF EXISTS clientes_tipo_documento_check;
+ALTER TABLE clientes ADD CONSTRAINT clientes_tipo_documento_check
+  CHECK (tipo_documento IN ('dui', 'nit', 'pasaporte', 'carnet_residente', 'otro'));
+
+-- ─────────────────────────────────────────────
 -- Seed: Cliente por defecto "Consumidor Final"
 -- Datos mínimos requeridos por Hacienda para FCF
 -- Son datos genéricos, no representan a una persona real
