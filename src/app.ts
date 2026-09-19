@@ -57,7 +57,7 @@ app.use(['/api', '/api/v1'], helmet.contentSecurityPolicy({
     scriptSrc: ["'self'"],
     styleSrc: ["'self'", "'unsafe-inline'"],
     imgSrc: ["'self'", 'data:', 'https:'],
-    connectSrc: ["'self'"],
+    connectSrc: ["'self'", ...CORS_ORIGINS],
     fontSrc: ["'self'"],
     objectSrc: ["'none'"],
     frameAncestors: ["'none'"],
