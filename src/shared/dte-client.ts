@@ -15,8 +15,15 @@ export const crearClienteDte = (baseURL: string, apiKey: string, tenantId?: stri
   });
 
   cliente.interceptors.response.use(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (response) => response.data as any,
+    (response) => {
+      const payload = response.data as unknown;
+      const data = payload && typeof payload === 'object' && 'data' in payload
+        ? (payload as { data: unknown }).data
+        : payload;
+      // Axios models the interceptor as returning AxiosResponse, but this
+      // client deliberately exposes the API payload to feature services.
+      return data as never;
+    },
     (error) => {
       if (error.response) {
         const mensaje = error.response.data?.mensaje || `DTE Service error: ${error.response.status}`;

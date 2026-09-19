@@ -1,4 +1,5 @@
 import http from 'http';
+import jwt from 'jsonwebtoken';
 import { Server as SocketServer } from 'socket.io';
 import app from './app.js';
 import { env } from './shared/config/env.js';
@@ -19,15 +20,27 @@ const io = new SocketServer(httpServer, {
   transports: ES_PRODUCCION ? ['websocket'] : ['websocket', 'polling'],
 });
 
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (typeof token !== 'string' || !token) {
+    return next(new Error('Socket authentication required'));
+  }
+
+  try {
+    const decoded = jwt.verify(token, env.JWT_SECRET) as { tenant_id?: string };
+    if (!decoded.tenant_id) return next(new Error('Socket tenant missing'));
+    socket.data.tenantId = decoded.tenant_id;
+    return next();
+  } catch {
+    return next(new Error('Invalid socket token'));
+  }
+});
+
 io.on('connection', (socket) => {
   logger.debug('Cliente Socket.io conectado', { id: socket.id });
-
-  socket.on('join:tenant', (tenantId: string) => {
-    if (tenantId) {
-      socket.join(`tenant:${tenantId}`);
-      logger.debug(`Socket unido a sala tenant:${tenantId}`);
-    }
-  });
+  const tenantId = socket.data.tenantId as string;
+  socket.join(`tenant:${tenantId}`);
+  logger.debug(`Socket unido a sala tenant:${tenantId}`);
 
   socket.on('disconnect', () => {
     logger.debug('Cliente Socket.io desconectado', { id: socket.id });

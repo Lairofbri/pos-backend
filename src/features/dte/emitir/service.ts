@@ -93,15 +93,20 @@ const obtenerOrdenCompleta = async (tenantId: string, ordenId: string) => {
 const mapearItems = (items: ItemRow[]) => {
   return items
     .filter((item) => item.producto_id)
-    .map((item) => ({
-      descripcion: (item.producto_nombre as string) || (item.descripcion as string) || 'Producto',
-      precio_unitario: Number(item.precio_unitario) || 0,
-      cantidad: Number(item.cantidad) || 1,
-      descuento: Number(item.descuento_promo) || 0,
-      codigo: (item.producto_codigo as string) || null,
-      tipo_item: 1,
-      uni_medida: 99,
-    }));
+    .map((item) => {
+      const subtotal = Number(item.subtotal) || 0;
+      const descuentoManual = subtotal * (Number(item.descuento_porcentaje) || 0) / 100;
+      const descuento = Number(item.descuento_promo) + descuentoManual;
+      return {
+        descripcion: (item.producto_nombre as string) || (item.descripcion as string) || 'Producto',
+        precio_unitario: Number(item.precio_unitario) || 0,
+        cantidad: Number(item.cantidad) || 1,
+        descuento: Math.round(descuento * 100) / 100,
+        codigo: (item.producto_codigo as string) || null,
+        tipo_item: 1,
+        uni_medida: 99,
+      };
+    });
 };
 
 export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
@@ -270,24 +275,26 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
   try {
     await client.query('BEGIN');
 
-    await client.query(
+     const estadoDte = String(resultado.estado || 'emitido');
+
+     await client.query(
       `UPDATE ordenes
        SET dte_codigo_generacion = $1,
            dte_numero_control = $2,
-           dte_estado = 'emitido',
+           dte_estado = $3,
            dte_emitido_en = NOW()
-       WHERE id = $3`,
-      [resultado.codigo_generacion || null, resultado.numero_control || null, ordenId]
-    );
+        WHERE id = $4`,
+       [resultado.codigo_generacion || null, resultado.numero_control || null, estadoDte, ordenId]
+     );
 
     await client.query(
-      `INSERT INTO dtes_orden (orden_id, tenant_id, tipo_dte, codigo_generacion, numero_control, estado, json_envio, json_respuesta, creado_en)
-       VALUES ($1, $2, $3, $4, $5, 'emitido', $6, $7, NOW())`,
-      [
-        ordenId, tenantId, tipoDte,
-        resultado.codigo_generacion || null, resultado.numero_control || null,
-        JSON.stringify(payload), JSON.stringify(resultado),
-      ]
+       `INSERT INTO dtes_orden (orden_id, tenant_id, tipo_dte, codigo_generacion, numero_control, estado, json_envio, json_respuesta, creado_en)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+       [
+         ordenId, tenantId, tipoDte,
+         resultado.codigo_generacion || null, resultado.numero_control || null, estadoDte,
+         JSON.stringify(payload), JSON.stringify(resultado),
+       ]
     );
 
     await client.query('COMMIT');
@@ -302,6 +309,7 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
   }
 
   return {
+    estado: String(resultado.estado || 'emitido'),
     codigo_generacion: resultado.codigo_generacion,
     numero_control: resultado.numero_control,
     sello_recepcion: resultado.sello_recepcion || null,

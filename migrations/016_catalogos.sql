@@ -24,34 +24,34 @@ CREATE INDEX IF NOT EXISTS idx_catalogos_tenant_grupo
 -- ─────────────────────────────────────────────
 INSERT INTO catalogos (tenant_id, grupo, valor, label, orden) VALUES
     -- Zonas de mesas
-    ('a0000000-0000-0000-0000-000000000001', 'zonas', 'salon', 'Sal\u00f3n', 1),
-    ('a0000000-0000-0000-0000-000000000001', 'zonas', 'bar', 'Bar', 2),
-    ('a0000000-0000-0000-0000-000000000001', 'zonas', 'evento', 'Evento', 3),
+    ('a0000000-0000-4000-8000-000000000001', 'zonas', 'salon', 'Sal\u00f3n', 1),
+    ('a0000000-0000-4000-8000-000000000001', 'zonas', 'bar', 'Bar', 2),
+    ('a0000000-0000-4000-8000-000000000001', 'zonas', 'evento', 'Evento', 3),
 
     -- Tipos de documento de identidad
-    ('a0000000-0000-0000-0000-000000000001', 'tipos_documento', 'dui', 'DUI', 1),
-    ('a0000000-0000-0000-0000-000000000001', 'tipos_documento', 'nit', 'NIT', 2),
-    ('a0000000-0000-0000-0000-000000000001', 'tipos_documento', 'pasaporte', 'Pasaporte', 3),
-    ('a0000000-0000-0000-0000-000000000001', 'tipos_documento', 'carnet_residente', 'Carnet Residente', 4),
+    ('a0000000-0000-4000-8000-000000000001', 'tipos_documento', 'dui', 'DUI', 1),
+    ('a0000000-0000-4000-8000-000000000001', 'tipos_documento', 'nit', 'NIT', 2),
+    ('a0000000-0000-4000-8000-000000000001', 'tipos_documento', 'pasaporte', 'Pasaporte', 3),
+    ('a0000000-0000-4000-8000-000000000001', 'tipos_documento', 'carnet_residente', 'Carnet Residente', 4),
 
     -- M\u00e9todos de pago
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'efectivo', 'Efectivo', 1),
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'tarjeta', 'Tarjeta', 2),
-    ('a0000000-0000-0000-0000-000000000001', 'metodos_pago', 'mixto', 'Mixto', 3),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'efectivo', 'Efectivo', 1),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'tarjeta', 'Tarjeta', 2),
+    ('a0000000-0000-4000-8000-000000000001', 'metodos_pago', 'mixto', 'Mixto', 3),
 
     -- Tipos de movimiento de caja
-    ('a0000000-0000-0000-0000-000000000001', 'movimientos_tipo', 'ingreso', 'Ingreso', 1),
-    ('a0000000-0000-0000-0000-000000000001', 'movimientos_tipo', 'retiro', 'Retiro', 2),
-    ('a0000000-0000-0000-0000-000000000001', 'movimientos_tipo', 'deposito', 'Dep\u00f3sito', 3),
+    ('a0000000-0000-4000-8000-000000000001', 'movimientos_tipo', 'ingreso', 'Ingreso', 1),
+    ('a0000000-0000-4000-8000-000000000001', 'movimientos_tipo', 'retiro', 'Retiro', 2),
+    ('a0000000-0000-4000-8000-000000000001', 'movimientos_tipo', 'deposito', 'Dep\u00f3sito', 3),
 
     -- Or\u00edgenes de pedido (delivery)
-    ('a0000000-0000-0000-0000-000000000001', 'origenes_orden', 'pos', 'POS', 1),
-    ('a0000000-0000-0000-0000-000000000001', 'origenes_orden', 'hugo', 'Hugo', 2),
-    ('a0000000-0000-0000-0000-000000000001', 'origenes_orden', 'pedidosya', 'PedidosYa', 3),
-    ('a0000000-0000-0000-0000-000000000001', 'origenes_orden', 'ubereats', 'Uber Eats', 4),
-    ('a0000000-0000-0000-0000-000000000001', 'origenes_orden', 'whatsapp', 'WhatsApp', 5),
-    ('a0000000-0000-0000-0000-000000000001', 'origenes_orden', 'telefono', 'Tel\u00e9fono', 6),
-    ('a0000000-0000-0000-0000-000000000001', 'origenes_orden', 'otro', 'Otro', 7)
+    ('a0000000-0000-4000-8000-000000000001', 'origenes_orden', 'pos', 'POS', 1),
+    ('a0000000-0000-4000-8000-000000000001', 'origenes_orden', 'hugo', 'Hugo', 2),
+    ('a0000000-0000-4000-8000-000000000001', 'origenes_orden', 'pedidosya', 'PedidosYa', 3),
+    ('a0000000-0000-4000-8000-000000000001', 'origenes_orden', 'ubereats', 'Uber Eats', 4),
+    ('a0000000-0000-4000-8000-000000000001', 'origenes_orden', 'whatsapp', 'WhatsApp', 5),
+    ('a0000000-0000-4000-8000-000000000001', 'origenes_orden', 'telefono', 'Tel\u00e9fono', 6),
+    ('a0000000-0000-4000-8000-000000000001', 'origenes_orden', 'otro', 'Otro', 7)
 ON CONFLICT (tenant_id, grupo, valor) DO NOTHING;
 
 -- ─────────────────────────────────────────────

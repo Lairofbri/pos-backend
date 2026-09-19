@@ -15,6 +15,40 @@ interface DatosPromocion {
   productos?: string[];
 }
 
+const validarReglasPromocion = (datos: DatosPromocion) => {
+  const tipo = datos.tipo;
+  if (!tipo) return;
+
+  if (tipo === 'dosxuno' && datos.descuento_porcentaje != null) {
+    throw { status: 400, mensaje: 'La promoción dosxuno no admite descuento_porcentaje.' };
+  }
+  if (tipo !== 'dosxuno' && datos.descuento_porcentaje == null) {
+    throw { status: 400, mensaje: `La promoción ${tipo} requiere descuento_porcentaje.` };
+  }
+  if (tipo === 'volumen' && (!datos.volumen_minimo || datos.volumen_minimo < 1)) {
+    throw { status: 400, mensaje: 'La promoción volumen requiere volumen_minimo.' };
+  }
+  if (tipo === 'happy_hour' && (!datos.hora_inicio || !datos.hora_fin)) {
+    throw { status: 400, mensaje: 'La promoción happy_hour requiere hora_inicio y hora_fin.' };
+  }
+  if ((datos.hora_inicio && !datos.hora_fin) || (!datos.hora_inicio && datos.hora_fin)) {
+    throw { status: 400, mensaje: 'hora_inicio y hora_fin deben enviarse juntas.' };
+  }
+};
+
+const validarProductosTenant = async (client: Awaited<ReturnType<typeof getClient>>, tenantId: string, productos: string[] = []) => {
+  const ids = [...new Set(productos)];
+  if (ids.length === 0) return;
+
+  const { rows } = await client.query(
+    'SELECT id FROM productos WHERE tenant_id = $1 AND id = ANY($2::uuid[])',
+    [tenantId, ids]
+  );
+  if (rows.length !== ids.length) {
+    throw { status: 400, mensaje: 'Una o más promociones referencian productos de otro tenant o inexistentes.' };
+  }
+};
+
 const SELECT_PROMO = `
   SELECT pr.*,
     COALESCE(
@@ -53,9 +87,11 @@ export const listarPromocionesActivas = async ({ tenantId }: { tenantId: string 
 };
 
 export const crearPromocion = async ({ tenantId, datos }: { tenantId: string; datos: DatosPromocion }) => {
+  validarReglasPromocion(datos);
   const client = await getClient();
   try {
     await client.query('BEGIN');
+    await validarProductosTenant(client, tenantId, datos.productos);
     const { rows } = await client.query(
       `INSERT INTO promociones
          (tenant_id, nombre, tipo, descuento_porcentaje, volumen_minimo, hora_inicio, hora_fin, dias, vigente_desde, vigente_hasta, activo)
@@ -97,7 +133,12 @@ export const crearPromocion = async ({ tenantId, datos }: { tenantId: string; da
 };
 
 export const actualizarPromocion = async ({ tenantId, promoId, datos }: { tenantId: string; promoId: string; datos: DatosPromocion }) => {
-  await obtenerPromocion({ tenantId, promoId });
+  const actual = await obtenerPromocion({ tenantId, promoId });
+  validarReglasPromocion({
+    ...actual,
+    ...datos,
+    productos: datos.productos ?? actual.productos,
+  });
 
   const campos: string[] = [];
   const valores: unknown[] = [];
@@ -119,6 +160,7 @@ export const actualizarPromocion = async ({ tenantId, promoId, datos }: { tenant
     const client = await getClient();
     try {
       await client.query('BEGIN');
+      await validarProductosTenant(client, tenantId, datos.productos ?? (actual.productos as string[]));
       if (campos.length > 0) {
         valores.push(promoId, tenantId);
         await client.query(

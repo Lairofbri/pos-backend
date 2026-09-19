@@ -149,6 +149,7 @@ VALUES (
   TRUE
 ) ON CONFLICT DO NOTHING;
 
+
 -- Nota: los hashes reales se generan al ejecutar el seeder de Node.js
 -- Este INSERT es solo para referencia de estructura
 -- Ver: src/migrations/seed.js

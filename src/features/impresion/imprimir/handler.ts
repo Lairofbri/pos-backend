@@ -4,6 +4,7 @@ import net from 'net';
 import { query } from '../../../shared/config/database.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { exito, error, errorServidor } from '../../../shared/utils/response.js';
+import { obtenerClientePorTenant } from '../../../shared/dte-client.js';
 import { obtener } from '../impresoras/service.js';
 import { formatoPreCuenta, formatoTicketConsumo, formatoFactura } from './formats.js';
 
@@ -63,7 +64,40 @@ const obtenerDatosOrden = async (tenantId: string, ordenId: string) => {
   return { orden: ordenRows[0], items, pagos, tenant: tenantRows[0] || {} };
 };
 
-const imprimirEnRed = async ({ ip, puerto, texto, papelMm = 80 }: { ip: string; puerto: number; texto: string; papelMm?: number }) => {
+const obtenerDteFiscal = async (tenantId: string, codigoGeneracion: string | null) => {
+  if (!codigoGeneracion) {
+    throw { status: 404, mensaje: 'La orden no tiene un DTE asociado.' };
+  }
+
+  const { rows } = await query(
+    `SELECT tipo_dte, codigo_generacion, numero_control, estado, sello_recepcion
+     FROM dtes_orden
+     WHERE tenant_id = $1 AND codigo_generacion = $2
+     ORDER BY creado_en DESC
+     LIMIT 1`,
+    [tenantId, codigoGeneracion]
+  );
+  const referencia = rows[0] as Record<string, unknown> | undefined;
+
+  if (!referencia) {
+    throw { status: 404, mensaje: 'No se encontró el registro fiscal de la orden.' };
+  }
+  if (referencia.estado !== 'aceptado') {
+    throw { status: 409, mensaje: `El DTE no puede imprimirse como fiscal porque está en estado "${referencia.estado}".` };
+  }
+
+  const cliente = await obtenerClientePorTenant(tenantId);
+  const dte = await cliente.get(`/api/dte/${encodeURIComponent(codigoGeneracion)}`) as Record<string, unknown>;
+  return { ...referencia, ...dte };
+};
+
+const imprimirEnRed = async ({ ip, puerto, texto, papelMm = 80, qrUrl }: {
+  ip: string;
+  puerto: number;
+  texto: string;
+  papelMm?: number;
+  qrUrl?: string | null;
+}) => {
   return new Promise<void>((resolve, reject) => {
     const socket = new net.Socket();
 
@@ -86,6 +120,11 @@ const imprimirEnRed = async ({ ip, puerto, texto, papelMm = 80 }: { ip: string; 
         printer.alignCenter();
         printer.println(' ');
         printer.println(texto);
+        if (qrUrl) {
+          printer.println(' ');
+          printer.printQR(qrUrl, { model: 2, cellSize: 5, correction: 'M' });
+          printer.println(' ');
+        }
         printer.println(' ');
         printer.cut();
 
@@ -134,8 +173,11 @@ export const imprimir = async (req: Request, res: Response) => {
     }
 
     const { orden, items, pagos, tenant } = await obtenerDatosOrden(req.usuario!.tenant_id, req.params.ordenId as string);
+    const dte = tipo === 'factura'
+      ? await obtenerDteFiscal(req.usuario!.tenant_id, (orden.dte_codigo_generacion as string) || null)
+      : null;
 
-    const texto = config.formato({ orden, tenant, items, pagos, dte: null });
+    const texto = config.formato({ orden, tenant, items, pagos, dte });
 
     try {
       await imprimirEnRed({
@@ -143,6 +185,7 @@ export const imprimir = async (req: Request, res: Response) => {
         puerto: impresora.puerto as number,
         texto,
         papelMm: impresora.papel_mm as number,
+        qrUrl: dte?.qr_url as string | null | undefined,
       });
 
       logger.info('Ticket impreso', { tenant_id: req.usuario!.tenant_id, orden_id: req.params.ordenId, tipo, impresora: impresora.nombre as string });

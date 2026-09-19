@@ -6,28 +6,28 @@
 
 -- Demo tenant
 INSERT INTO catalogos (tenant_id, grupo, valor, label, orden) VALUES
-    ('a0000000-0000-0000-0000-000000000001', 'tipos_orden', 'rapido', 'R\u00e1pido', 1),
-    ('a0000000-0000-0000-0000-000000000001', 'tipos_orden', 'mesa', 'Mesa', 2),
-    ('a0000000-0000-0000-0000-000000000001', 'tipos_orden', 'delivery', 'Delivery', 3),
+    ('a0000000-0000-4000-8000-000000000001', 'tipos_orden', 'rapido', 'R\u00e1pido', 1),
+    ('a0000000-0000-4000-8000-000000000001', 'tipos_orden', 'mesa', 'Mesa', 2),
+    ('a0000000-0000-4000-8000-000000000001', 'tipos_orden', 'delivery', 'Delivery', 3),
 
-    ('a0000000-0000-0000-0000-000000000001', 'estados_orden', 'abierta', 'Abierta', 1),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_orden', 'en_proceso', 'En Proceso', 2),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_orden', 'lista', 'Lista', 3),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_orden', 'entregada', 'Entregada', 4),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_orden', 'pagada', 'Pagada', 5),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_orden', 'cancelada', 'Cancelada', 6),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_orden', 'abierta', 'Abierta', 1),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_orden', 'en_proceso', 'En Proceso', 2),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_orden', 'lista', 'Lista', 3),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_orden', 'entregada', 'Entregada', 4),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_orden', 'pagada', 'Pagada', 5),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_orden', 'cancelada', 'Cancelada', 6),
 
-    ('a0000000-0000-0000-0000-000000000001', 'estados_item', 'pendiente', 'Pendiente', 1),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_item', 'en_proceso', 'En Proceso', 2),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_item', 'listo', 'Listo', 3),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_item', 'cancelado', 'Cancelado', 4),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_item', 'pendiente', 'Pendiente', 1),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_item', 'en_proceso', 'En Proceso', 2),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_item', 'listo', 'Listo', 3),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_item', 'cancelado', 'Cancelado', 4),
 
-    ('a0000000-0000-0000-0000-000000000001', 'estados_caja', 'abierta', 'Abierta', 1),
-    ('a0000000-0000-0000-0000-000000000001', 'estados_caja', 'cerrada', 'Cerrada', 2),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_caja', 'abierta', 'Abierta', 1),
+    ('a0000000-0000-4000-8000-000000000001', 'estados_caja', 'cerrada', 'Cerrada', 2),
 
-    ('a0000000-0000-0000-0000-000000000001', 'tipos_ajuste_stock', 'suma', 'Sumar', 1),
-    ('a0000000-0000-0000-0000-000000000001', 'tipos_ajuste_stock', 'resta', 'Restar', 2),
-    ('a0000000-0000-0000-0000-000000000001', 'tipos_ajuste_stock', 'absoluto', 'Fijar', 3)
+    ('a0000000-0000-4000-8000-000000000001', 'tipos_ajuste_stock', 'suma', 'Sumar', 1),
+    ('a0000000-0000-4000-8000-000000000001', 'tipos_ajuste_stock', 'resta', 'Restar', 2),
+    ('a0000000-0000-4000-8000-000000000001', 'tipos_ajuste_stock', 'absoluto', 'Fijar', 3)
 ON CONFLICT (tenant_id, grupo, valor) DO NOTHING;
 
 -- Actualizar procedimiento para nuevos tenants

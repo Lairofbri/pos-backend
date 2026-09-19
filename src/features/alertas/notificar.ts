@@ -15,23 +15,17 @@ export const evaluarYNotificar = async (tenantId: string): Promise<boolean> => {
     const firma = firmar(alertas);
 
     const { rows } = await query(
-      `UPDATE alertas_snapshot SET firma = $2, actualizado_en = NOW()
-       WHERE tenant_id = $1 RETURNING firma`,
+      `INSERT INTO alertas_snapshot (tenant_id, firma)
+       VALUES ($1, $2)
+       ON CONFLICT (tenant_id) DO UPDATE
+       SET firma = EXCLUDED.firma, actualizado_en = NOW()
+       WHERE alertas_snapshot.firma IS DISTINCT FROM EXCLUDED.firma
+       RETURNING firma`,
       [tenantId, firma]
     );
 
-    const previa = rows[0] as { firma: string } | undefined;
-
-    if (previa && previa.firma === firma) {
+    if (rows.length === 0) {
       return false;
-    }
-
-    if (!previa) {
-      await query(
-        `INSERT INTO alertas_snapshot (tenant_id, firma) VALUES ($1, $2)
-         ON CONFLICT (tenant_id) DO NOTHING`,
-        [tenantId, firma]
-      );
     }
 
     if (enHorarioSilencioso(config)) {

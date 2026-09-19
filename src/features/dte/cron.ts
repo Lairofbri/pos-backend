@@ -58,30 +58,31 @@ const procesarPendientes = async () => {
 
         const cliente = await obtenerClientePorTenant(pendiente.tenant_id);
         const resp = await cliente.post(endpoint, payload);
-        const resultado = resp as unknown as Record<string, unknown>;
+         const resultado = resp as unknown as Record<string, unknown>;
+         const estadoDte = String(resultado.estado || 'emitido');
 
         const client = await getClient();
         try {
           await client.query('BEGIN');
 
           await client.query(
-            `UPDATE ordenes
-             SET dte_codigo_generacion = $1,
-                 dte_numero_control = $2,
-                 dte_estado = 'emitido',
-                 dte_emitido_en = NOW()
-             WHERE id = $3`,
-            [resultado.codigo_generacion || null, resultado.numero_control || null, pendiente.orden_id]
-          );
+             `UPDATE ordenes
+              SET dte_codigo_generacion = $1,
+                  dte_numero_control = $2,
+                  dte_estado = $3,
+                  dte_emitido_en = NOW()
+              WHERE id = $4`,
+             [resultado.codigo_generacion || null, resultado.numero_control || null, estadoDte, pendiente.orden_id]
+           );
 
           await client.query(
-            `INSERT INTO dtes_orden (orden_id, tenant_id, tipo_dte, codigo_generacion, numero_control, estado, json_envio, json_respuesta, creado_en)
-             VALUES ($1, $2, $3, $4, $5, 'emitido', $6, $7, NOW())`,
-            [
-              pendiente.orden_id, pendiente.tenant_id, pendiente.tipo_dte,
-              resultado.codigo_generacion || null, resultado.numero_control || null,
-              JSON.stringify(payload), JSON.stringify(resultado),
-            ]
+             `INSERT INTO dtes_orden (orden_id, tenant_id, tipo_dte, codigo_generacion, numero_control, estado, json_envio, json_respuesta, creado_en)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+             [
+               pendiente.orden_id, pendiente.tenant_id, pendiente.tipo_dte,
+               resultado.codigo_generacion || null, resultado.numero_control || null, estadoDte,
+               JSON.stringify(payload), JSON.stringify(resultado),
+             ]
           );
 
           await client.query(
