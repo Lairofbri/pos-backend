@@ -107,6 +107,13 @@ type OrdenRow = Record<string, unknown>;
 type ItemRow = Record<string, unknown>;
 type PagoRow = Record<string, unknown>;
 type TenantRow = { cod_estable_mh: string | null; cod_punto_venta_mh: string | null };
+type SucursalFiscalRow = {
+  id: string;
+  branch_id: string | null;
+  dte_establecimiento_id: string | null;
+  fiscal_status: string;
+  activo: boolean;
+};
 
 const toCents = (value: unknown): number => {
   const amount = Number(value || 0);
@@ -176,6 +183,63 @@ const mapearItems = (items: ItemRow[]) => {
     });
 };
 
+const obtenerContextoFiscalSucursal = async (tenantId: string, orden: OrdenRow): Promise<SucursalFiscalRow> => {
+  const sucursalId = orden.sucursal_id as string | null | undefined;
+  const contextoBase = {
+    tenant_id: tenantId,
+    sucursal_id: sucursalId || null,
+  };
+
+  if (!sucursalId) {
+    logger.warn('Emisión DTE bloqueada: orden sin sucursal operativa', contextoBase);
+    throw {
+      status: 409,
+      mensaje: 'La orden no tiene una sucursal operativa y no puede emitir un DTE.',
+    };
+  }
+
+  const { rows } = await query(
+    `SELECT id, branch_id, dte_establecimiento_id, fiscal_status, activo
+     FROM sucursales
+     WHERE id = $1 AND tenant_id = $2`,
+    [sucursalId, tenantId]
+  );
+
+  const sucursal = rows[0] as SucursalFiscalRow | undefined;
+  if (!sucursal) {
+    logger.warn('Emisión DTE bloqueada: sucursal no pertenece al tenant', contextoBase);
+    throw {
+      status: 409,
+      mensaje: 'La sucursal de la orden no pertenece al tenant autenticado.',
+    };
+  }
+
+  const contextoFiscal = {
+    ...contextoBase,
+    branch_id: sucursal.branch_id,
+    dte_establecimiento_id: sucursal.dte_establecimiento_id,
+    fiscal_status: sucursal.fiscal_status,
+    sucursal_activa: sucursal.activo,
+  };
+
+  if (
+    !sucursal.activo
+    || sucursal.fiscal_status === 'inactive'
+    || sucursal.fiscal_status !== 'ready'
+    || !sucursal.branch_id
+    || !sucursal.dte_establecimiento_id
+  ) {
+    logger.warn('Emisión DTE bloqueada: vínculo fiscal no está listo', contextoFiscal);
+    throw {
+      status: 409,
+      mensaje: 'La sucursal no tiene un vínculo fiscal DTE confirmado y listo para emitir.',
+    };
+  }
+
+  logger.info('Contexto fiscal resuelto para emisión DTE', contextoFiscal);
+  return sucursal;
+};
+
 export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
   const ordenId = datos.orden_id as string;
   const tipoDte = (datos.tipo_dte as string) || '01';
@@ -193,6 +257,8 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
     });
     return mapearRespuestaExistente(existente);
   }
+
+  const sucursalFiscal = await obtenerContextoFiscalSucursal(tenantId, orden);
 
   const { rows: tenantRows } = await query(
     'SELECT cod_estable_mh, cod_punto_venta_mh FROM tenants WHERE id = $1',
@@ -345,7 +411,18 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
   // SEGURIDAD: nunca transportar ni persistir credenciales del certificado.
   const payloadSeguro = limpiarPayloadSecreto(payload);
 
-  logger.info('Emitiendo DTE desde POS', { ordenId, tipoDte, endpoint, items: cuerpoItems.length, totalFiscal: totalFiscalCents / 100 });
+  logger.info('Emitiendo DTE desde POS', {
+    ordenId,
+    tipoDte,
+    endpoint,
+    items: cuerpoItems.length,
+    totalFiscal: totalFiscalCents / 100,
+    tenant_id: tenantId,
+    sucursal_id: sucursalFiscal.id,
+    branch_id: sucursalFiscal.branch_id,
+    dte_establecimiento_id: sucursalFiscal.dte_establecimiento_id,
+    fiscal_status: sucursalFiscal.fiscal_status,
+  });
 
   let resultado: Record<string, unknown>;
   try {
