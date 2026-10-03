@@ -16,5 +16,7 @@ declare module 'express' {
     requestId?: string;
     sucursalId?: string;
     authMode?: string;
+    operationId?: string;
+    origenInterno?: string;
   }
 }

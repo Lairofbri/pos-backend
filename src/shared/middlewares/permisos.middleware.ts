@@ -9,7 +9,11 @@ export const requierePermiso = (...codigos: string[]) => {
       return sinPermiso(res, 'No autenticado.');
     }
 
-    if (req.usuario.rol === 'administrador') {
+    // Fase 6: el rol plataforma opera como administrador de la plataforma
+    // (onboarding de empresas, consulta de estado fiscal). Sin esto, la
+    // cadena global requierePermiso('roles.configurar') de permisosRoutes
+    // bloquea GET /menus y el menú "Empresas" sería inaccesible en la UI.
+    if (req.usuario.rol === 'administrador' || req.usuario.rol === 'plataforma') {
       return next();
     }
 

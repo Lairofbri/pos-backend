@@ -51,6 +51,29 @@ export const env = {
   DTE_SERVICE_URL: process.env.DTE_SERVICE_URL ?? 'http://localhost:4000',
   DTE_API_KEY: process.env.DTE_API_KEY ?? '',
   DTE_TIMEOUT: opcionalInt('DTE_TIMEOUT', 10000),
+
+  // Provisión interna POS ↔ DTE (Fase 2):
+  // INTERNAL_API_KEY valida eventos entrantes del DTE Service.
+  // DTE_INTERNAL_API_KEY se envía al DTE Service en /internal/provisioning/*.
+  // Son claves servidor-a-servidor, DISTINTAS de la API Key técnica del
+  // tenant y de las credenciales Hacienda. Opcionales: si no están
+  // configuradas, las rutas internas fallan cerradas.
+  INTERNAL_API_KEY: process.env.INTERNAL_API_KEY ?? '',
+  DTE_INTERNAL_API_KEY: process.env.DTE_INTERNAL_API_KEY ?? '',
+
+  // Clave maestra para cifrar secretos en reposo (p.ej. dte_api_key_enc).
+  // AES-256-GCM vía scrypt — ver src/shared/utils/crypto.ts.
+  // OBLIGATORIA: sin ella el servicio no arranca (fail-fast).
+  POS_ENCRYPTION_KEY: (() => {
+    const clave = requerida('POS_ENCRYPTION_KEY');
+    if (clave.length < 32) {
+      throw new Error(
+        '[POS-BACKEND] POS_ENCRYPTION_KEY debe tener al menos 32 caracteres.\n' +
+        'Genera una con: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"'
+      );
+    }
+    return clave;
+  })(),
 } as const;
 
 export type Env = typeof env;

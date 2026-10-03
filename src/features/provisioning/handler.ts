@@ -1,30 +1,32 @@
 import type { Request, Response } from 'express';
-import { error, errorServidor } from '../../../../shared/utils/response.js';
-import { logger } from '../../../../shared/utils/logger.js';
-import { crearSucursalSchema } from './request.js';
-import { servicioSucursales } from './service.js';
+import { error, errorServidor } from '../../shared/utils/response.js';
+import { logger } from '../../shared/utils/logger.js';
+import { crearTenantPosSchema } from './request.js';
+import { servicioProvisionPos } from './service.js';
 
 const manejarError = (res: Response, err: unknown) => {
   const e = err as { status?: number; mensaje?: string };
   if (e.status && e.mensaje) return error(res, e.mensaje, e.status);
-  if ((err as { code?: string }).code === '23505') return error(res, 'Ya existe una sucursal con ese nombre.', 409);
-  logger.error('Error no controlado al crear sucursal', { error: (err as Error).message, stack: (err as Error).stack });
+  logger.error('Error no controlado al provisionar empresa', {
+    error: (err as Error).message,
+    stack: (err as Error).stack,
+  });
   return errorServidor(res);
 };
 
 export const handler = async (req: Request, res: Response) => {
-  // Idempotencia (Fase 3): header Idempotency-Key opcional.
+  // operation_id puede venir del header Idempotency-Key o del body.
   const operationIdHeader = req.headers['idempotency-key'] as string | undefined;
   const bodyConOperation = operationIdHeader
     ? { ...req.body, operation_id: operationIdHeader }
     : req.body;
 
-  const { error: validacionError, value } = crearSucursalSchema.validate(bodyConOperation);
+  const { error: validacionError, value } = crearTenantPosSchema.validate(bodyConOperation);
   if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
-    const resultado = await servicioSucursales.crearSucursal({
-      tenantId: req.usuario!.tenant_id,
+    const resultado = await servicioProvisionPos.crearTenantPos({
+      tenantIdOperador: req.usuario!.tenant_id,
       datos: value,
       operationId: value.operation_id,
     });

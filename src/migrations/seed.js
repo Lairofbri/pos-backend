@@ -10,6 +10,7 @@
 // SOLO ejecutar una vez al inicio. Es idempotente (no duplica si ya existe).
 
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { query, verificarConexion } = require('../shared/config/database.js');
 const { env } = require('../shared/config/env.js');
 const { logger } = require('../shared/utils/logger.js');
@@ -66,6 +67,7 @@ const sembrarMenusTenant = async (tenantId) => {
     { id: '00000000-0000-4000-8000-000000000018', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Cuentas',     icono: 'receipt',     ruta: '/admin/cuentas',         orden: 12, permiso_codigo: 'ordenes.ver' },
     { id: '00000000-0000-4000-8000-000000000020', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Restaurante', icono: 'store',       ruta: '/admin/restaurante',     orden: 15, permiso_codigo: null },
     { id: '00000000-0000-4000-8000-000000000021', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Promociones', icono: 'tag',         ruta: '/admin/promociones',     orden: 16, permiso_codigo: null },
+    { id: '00000000-0000-4000-8000-000000000022', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Empresas',    icono: 'building',    ruta: '/admin/empresas',       orden: 17, permiso_codigo: 'empresas.provisionar' },
 
     // Hijos de Configuraciones
     { id: '00000000-0000-4000-8000-000000000011', parent_id: '00000000-0000-4000-8000-000000000010', titulo: 'Menú',           icono: 'menu',   ruta: '/configuraciones/menus', orden: 1, permiso_codigo: 'roles.configurar' },
@@ -109,6 +111,24 @@ const sembrarUsuariosExtra = async (tenantId, sucursalId) => {
        ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre, apellido = EXCLUDED.apellido, rol = EXCLUDED.rol`,
       [u.id, tenantId, sucursalId, u.nombre, u.apellido, u.email, pinHash, u.rol]
     );
+  }
+
+  // Fase 2: usuario de plataforma (onboarding / alta de empresas).
+  // Tiene password para login web; el PIN cubre el NOT NULL de pin_hash.
+  const plataformaEmail = 'plataforma@demo.pos';
+  const { rows: plataformaExistente } = await query(
+    'SELECT id FROM usuarios WHERE email = $1',
+    [plataformaEmail]
+  );
+  if (plataformaExistente.length === 0) {
+    const passwordHash = await bcrypt.hash('Admin123!', SALT_ROUNDS);
+    const pinHash = await bcrypt.hash('999999', SALT_ROUNDS);
+    await query(
+      `INSERT INTO usuarios (id, tenant_id, sucursal_id, nombre, apellido, email, password_hash, pin_hash, rol)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'plataforma') ON CONFLICT DO NOTHING`,
+      [crypto.randomUUID(), tenantId, sucursalId, 'Plataforma', 'Demo', plataformaEmail, passwordHash, pinHash]
+    );
+    logger.info('Usuario plataforma sembrado', { tenant_id: tenantId });
   }
   logger.info('Usuarios extra sembrados', { tenant_id: tenantId, usuarios: usuarios.length });
 };

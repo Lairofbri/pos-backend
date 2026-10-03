@@ -33,6 +33,8 @@ import cuentasRoutes from './features/cuentas/routes.js';
 import restauranteRoutes from './features/restaurante/routes.js';
 import promocionesRoutes from './features/promociones/routes.js';
 import alertasRoutes from './features/alertas/routes.js';
+import provisioningRoutes from './features/provisioning/routes.js';
+import internalProvisioningRoutes from './features/internal/provisioning/routes.js';
 
 const app = express();
 
@@ -151,6 +153,10 @@ apiV1.use(productosRoutes);
 apiV1.use(posRoutes);
 apiV1.use(clientesRoutes);
 apiV1.use(cajaRoutes);
+// Provisión (Fase 2): debe montarse ANTES de permisosRoutes — su cadena
+// requierePermiso('roles.configurar') es de alcance global (path-agnóstica)
+// y bloquearía el alta de empresas para el rol plataforma.
+apiV1.use(provisioningRoutes);
 apiV1.use(permisosRoutes);
 apiV1.use(combosRoutes);
 apiV1.use(cocinaRoutes);
@@ -166,6 +172,10 @@ apiV1.use(cuentasRoutes);
 apiV1.use(restauranteRoutes);
 apiV1.use(promocionesRoutes);
 apiV1.use(alertasRoutes);
+
+// Rutas internas servidor-a-servidor (Fase 2): fuera del apiV1, sin
+// autenticación de usuario — solo clave interna.
+app.use(internalProvisioningRoutes);
 
 app.use('/api/v1', apiV1);
 app.use('/api', apiV1);

@@ -106,7 +106,6 @@ const persistirRechazo = async (
 type OrdenRow = Record<string, unknown>;
 type ItemRow = Record<string, unknown>;
 type PagoRow = Record<string, unknown>;
-type TenantRow = { cod_estable_mh: string | null; cod_punto_venta_mh: string | null };
 type SucursalFiscalRow = {
   id: string;
   branch_id: string | null;
@@ -174,13 +173,92 @@ const mapearItems = (items: ItemRow[]) => {
       return {
         descripcion: (item.producto_nombre as string) || (item.descripcion as string) || 'Producto',
         precio_unitario: Number(item.precio_unitario) || 0,
-        cantidad: Number(item.cantidad) || 1,
+cantidad: Number(item.cantidad) || 1,
         descuento: Math.round(descuento * 100) / 100,
         codigo: (item.producto_codigo as string) || null,
         tipo_item: 1,
         uni_medida: 99,
       };
     });
+};
+
+// Fase 5 — construir los pagos fiscales (CAT-007). La propina y el vuelto
+// son importes operativos y no forman parte de los pagos del DTE.
+const construirPagosMH = (pagos: PagoRow[], totalFiscalCents: number) => {
+  const pagosMH: Array<{ codigo: string; montoPago: number; referencia?: string | null }> = [];
+  let restanteFiscalCents = totalFiscalCents;
+  for (const pago of pagos) {
+    const metodo = (pago.metodo as string) || 'efectivo';
+    const codigoMH = MAPA_METODO_MH[metodo] || '99';
+    const montoRecibidoCents = toCents(pago.total_pagado);
+    const vueltoCents = toCents(pago.vuelto);
+    const disponibleCents = Math.max(0, montoRecibidoCents - vueltoCents);
+    const montoFiscalCents = Math.min(restanteFiscalCents, disponibleCents);
+
+    if (metodo === 'mixto') {
+      const efectivoCents = Math.min(toCents(pago.monto_efectivo), montoFiscalCents);
+      const tarjetaCents = Math.min(toCents(pago.monto_tarjeta), montoFiscalCents - efectivoCents);
+      if (efectivoCents > 0) pagosMH.push({ codigo: '01', montoPago: efectivoCents / 100 });
+      if (tarjetaCents > 0) pagosMH.push({ codigo: '03', montoPago: tarjetaCents / 100 });
+    } else {
+      const ref = (pago.referencia_tarjeta as string)
+        || (pago.referencia_transferencia as string)
+        || (pago.hash_bitcoin as string)
+        || (pago.referencia_cheque as string)
+        || null;
+      if (montoFiscalCents > 0) {
+        pagosMH.push({ codigo: codigoMH, montoPago: montoFiscalCents / 100, referencia: ref });
+      }
+    }
+    restanteFiscalCents -= montoFiscalCents;
+  }
+
+  if (restanteFiscalCents !== 0) {
+    throw {
+      status: 400,
+      mensaje: 'La suma de pagos fiscales no coincide con el total del DTE.',
+    };
+  }
+
+  return pagosMH;
+};
+
+// Fase 5 — construir el payload base de emisión POS → DTE.
+// El POS resuelve la sucursal activa al establecimiento DTE y lo transporta
+// junto con branch_id (spec §9). Los códigos MH del tenant ya NO se envían:
+// DTE los trata solo como verificación, nunca como fuente de selección.
+export const construirPayloadEmitir = ({
+  ordenId,
+  orden,
+  items,
+  pagos,
+  sucursalFiscal,
+  tipoDte,
+}: {
+  ordenId: string;
+  orden: OrdenRow;
+  items: ItemRow[];
+  pagos: PagoRow[];
+  sucursalFiscal: SucursalFiscalRow;
+  tipoDte: string;
+}) => {
+  const totalFiscalCents = toCents(orden.total);
+  const cuerpoItems = mapearItems(items);
+  const pagosMH = construirPagosMH(pagos, totalFiscalCents);
+
+  const payloadBase: Record<string, unknown> = {
+    items: cuerpoItems,
+    pagos: pagosMH,
+    metodo_pago: pagosMH.length > 1 ? 'mixto' : pagosMH[0]?.codigo === '03' ? 'tarjeta' : 'efectivo',
+    orden_referencia: orden.numero_orden?.toString() || null,
+    establecimiento_id: sucursalFiscal.dte_establecimiento_id,
+    branch_id: sucursalFiscal.branch_id,
+    // Fase 3 — clave idempotente: tenant + orden + tipo. Los reintentos
+    // reutilizan el mismo DTE en el dte-service (sin nuevo correlativo).
+    idempotency_key: `${ordenId}:${tipoDte}`,
+  };
+
+  return { payloadBase, totalFiscalCents, cuerpoItems };
 };
 
 const obtenerContextoFiscalSucursal = async (tenantId: string, orden: OrdenRow): Promise<SucursalFiscalRow> => {
@@ -258,66 +336,16 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
     return mapearRespuestaExistente(existente);
   }
 
-  const sucursalFiscal = await obtenerContextoFiscalSucursal(tenantId, orden);
+const sucursalFiscal = await obtenerContextoFiscalSucursal(tenantId, orden);
 
-  const { rows: tenantRows } = await query(
-    'SELECT cod_estable_mh, cod_punto_venta_mh FROM tenants WHERE id = $1',
-    [tenantId]
-  );
-  const tenant = (tenantRows[0] || {}) as TenantRow;
-
-  const totalFiscalCents = toCents(orden.total);
-
-  const cuerpoItems = mapearItems(items);
-
-  // Construir pagos fiscales con códigos MH (CAT-007). La propina y el vuelto
-  // son importes operativos y no forman parte de los pagos del DTE.
-  const pagosMH: Array<{ codigo: string; montoPago: number; referencia?: string | null }> = [];
-  let restanteFiscalCents = totalFiscalCents;
-  for (const pago of pagos) {
-    const metodo = (pago.metodo as string) || 'efectivo';
-    const codigoMH = MAPA_METODO_MH[metodo] || '99';
-    const montoRecibidoCents = toCents(pago.total_pagado);
-    const vueltoCents = toCents(pago.vuelto);
-    const disponibleCents = Math.max(0, montoRecibidoCents - vueltoCents);
-    const montoFiscalCents = Math.min(restanteFiscalCents, disponibleCents);
-
-    if (metodo === 'mixto') {
-      const efectivoCents = Math.min(toCents(pago.monto_efectivo), montoFiscalCents);
-      const tarjetaCents = Math.min(toCents(pago.monto_tarjeta), montoFiscalCents - efectivoCents);
-      if (efectivoCents > 0) pagosMH.push({ codigo: '01', montoPago: efectivoCents / 100 });
-      if (tarjetaCents > 0) pagosMH.push({ codigo: '03', montoPago: tarjetaCents / 100 });
-    } else {
-      const ref = (pago.referencia_tarjeta as string)
-        || (pago.referencia_transferencia as string)
-        || (pago.hash_bitcoin as string)
-        || (pago.referencia_cheque as string)
-        || null;
-      if (montoFiscalCents > 0) {
-        pagosMH.push({ codigo: codigoMH, montoPago: montoFiscalCents / 100, referencia: ref });
-      }
-    }
-    restanteFiscalCents -= montoFiscalCents;
-  }
-
-  if (restanteFiscalCents !== 0) {
-    throw {
-      status: 400,
-      mensaje: 'La suma de pagos fiscales no coincide con el total del DTE.',
-    };
-  }
-
-  const payloadBase: Record<string, unknown> = {
-    items: cuerpoItems,
-    pagos: pagosMH,
-    metodo_pago: pagosMH.length > 1 ? 'mixto' : pagosMH[0]?.codigo === '03' ? 'tarjeta' : 'efectivo',
-    orden_referencia: orden.numero_orden?.toString() || null,
-    cod_estable_mh: tenant.cod_estable_mh || null,
-    cod_punto_venta_mh: tenant.cod_punto_venta_mh || null,
-    // Fase 3 — clave idempotente: tenant + orden + tipo. Los reintentos
-    // reutilizan el mismo DTE en el dte-service (sin nuevo correlativo).
-    idempotency_key: `${ordenId}:${tipoDte}`,
-  };
+  const { payloadBase, totalFiscalCents, cuerpoItems } = construirPayloadEmitir({
+    ordenId,
+    orden,
+    items,
+    pagos,
+    sucursalFiscal,
+    tipoDte,
+  });
 
   let payload: Record<string, unknown>;
 
@@ -462,19 +490,22 @@ export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenan
     );
 
     await client.query(
-      `INSERT INTO dtes_orden (orden_id, tenant_id, tipo_dte, codigo_generacion, numero_control, estado, json_envio, json_respuesta, creado_en)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+      `INSERT INTO dtes_orden (orden_id, tenant_id, tipo_dte, codigo_generacion, numero_control, estado, json_envio, json_respuesta, branch_id, dte_establecimiento_id, creado_en)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
        ON CONFLICT (tenant_id, orden_id, tipo_dte) DO UPDATE
        SET codigo_generacion = EXCLUDED.codigo_generacion,
            numero_control = EXCLUDED.numero_control,
            estado = EXCLUDED.estado,
            json_respuesta = EXCLUDED.json_respuesta,
+           branch_id = EXCLUDED.branch_id,
+           dte_establecimiento_id = EXCLUDED.dte_establecimiento_id,
            actualizado_en = NOW()`,
       [
         ordenId, tenantId, tipoDte,
         resultado.codigo_generacion || null, resultado.numero_control || null,
         estadoFiscal,
         JSON.stringify(payloadSeguro), JSON.stringify(resultado),
+        sucursalFiscal.branch_id, sucursalFiscal.dte_establecimiento_id,
       ]
     );
 
