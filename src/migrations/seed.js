@@ -67,7 +67,8 @@ const sembrarMenusTenant = async (tenantId) => {
     { id: '00000000-0000-4000-8000-000000000018', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Cuentas',     icono: 'receipt',     ruta: '/admin/cuentas',         orden: 12, permiso_codigo: 'ordenes.ver' },
     { id: '00000000-0000-4000-8000-000000000020', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Restaurante', icono: 'store',       ruta: '/admin/restaurante',     orden: 15, permiso_codigo: null },
     { id: '00000000-0000-4000-8000-000000000021', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Promociones', icono: 'tag',         ruta: '/admin/promociones',     orden: 16, permiso_codigo: null },
-    { id: '00000000-0000-4000-8000-000000000022', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Empresas',    icono: 'building',    ruta: '/admin/empresas',       orden: 17, permiso_codigo: 'empresas.provisionar' },
+    // NOTA (077): el menú "Empresas" (/admin/empresas) se eliminó del POS —
+    // el alta de empresas vive solo en el DTE Frontend (decisión 2026-10-07).
 
     // Hijos de Configuraciones
     { id: '00000000-0000-4000-8000-000000000011', parent_id: '00000000-0000-4000-8000-000000000010', titulo: 'Menú',           icono: 'menu',   ruta: '/configuraciones/menus', orden: 1, permiso_codigo: 'roles.configurar' },

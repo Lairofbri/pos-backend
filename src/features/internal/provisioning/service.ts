@@ -16,7 +16,7 @@ import { logger } from '../../../shared/utils/logger.js';
  * REGLA: el payload del evento nunca contiene credenciales Hacienda ni
  * secretos de firma; nada de esto se persiste en POS.
  */
-type PayloadTenant = { nombre: string; nit: string; nrc?: string | null; email?: string | null };
+type PayloadTenant = { nombre: string; nombre_comercial?: string | null; nit: string; nrc?: string | null; email?: string | null };
 type PayloadBranch = {
   branch_id: string;
   establecimiento_id: string;
@@ -24,6 +24,14 @@ type PayloadBranch = {
   nombre: string;
   direccion?: string | null;
   telefono?: string | null;
+};
+type PayloadUsuarioInicial = {
+  nombre: string;
+  apellido?: string | null;
+  email: string;
+  rol: string;
+  password_hash: string;
+  pin_hash: string;
 };
 
 const crearServicioEventosProvision = (dependencias: { db?: { query: typeof query } } = {}) => {
@@ -38,7 +46,7 @@ const crearServicioEventosProvision = (dependencias: { db?: { query: typeof quer
     operationId: string;
     tipoEvento: string;
     tenantId: string;
-    payload: PayloadTenant | PayloadBranch;
+    payload: PayloadTenant | PayloadBranch | PayloadUsuarioInicial;
   }) => {
     // Idempotencia: si la operación ya se procesó, devolver la misma respuesta.
     const { rows: cached } = await db.query(
@@ -53,15 +61,16 @@ const crearServicioEventosProvision = (dependencias: { db?: { query: typeof quer
     if (tipoEvento === 'TENANT_CREADO') {
       const p = payload as PayloadTenant;
       await db.query(
-        `INSERT INTO tenants (id, nombre, nit, nrc, email, activo, fiscal_sync_status, last_fiscal_sync_at)
-         VALUES ($1, $2, $3, $4, $5, TRUE, 'pending_fiscal_setup', NOW())
+        `INSERT INTO tenants (id, nombre, nombre_comercial, nit, nrc, email, activo, fiscal_sync_status, last_fiscal_sync_at)
+         VALUES ($1, $2, $3, $4, $5, $6, TRUE, 'pending_fiscal_setup', NOW())
          ON CONFLICT (id) DO UPDATE SET
            nombre = EXCLUDED.nombre,
+           nombre_comercial = COALESCE(EXCLUDED.nombre_comercial, tenants.nombre_comercial, EXCLUDED.nombre),
            nit = EXCLUDED.nit,
            nrc = COALESCE(EXCLUDED.nrc, tenants.nrc),
            email = COALESCE(EXCLUDED.email, tenants.email),
            last_fiscal_sync_at = NOW()`,
-        [tenantId, p.nombre, p.nit, p.nrc || null, p.email || null]
+        [tenantId, p.nombre, p.nombre_comercial || p.nombre, p.nit, p.nrc || null, p.email || null]
       );
     }
 
@@ -114,6 +123,11 @@ const crearServicioEventosProvision = (dependencias: { db?: { query: typeof quer
       });
     }
 
+    if (tipoEvento === 'USUARIO_INICIAL') {
+      const p = payload as PayloadUsuarioInicial;
+      await aplicarUsuarioInicial({ operationId, tenantId, usuario: p });
+    }
+
     const body = { ok: true, mensaje: 'Evento de provisión procesado.', data: { tenant_id: tenantId } };
     const resultado = { status: 200, body };
 
@@ -131,6 +145,76 @@ const crearServicioEventosProvision = (dependencias: { db?: { query: typeof quer
     });
 
     return resultado;
+  };
+
+  /**
+   * Usuario administrador inicial del tenant (evento USUARIO_INICIAL).
+   *
+   * REGLAS (2026-10-07):
+   * - SOLO hashes bcrypt en el payload: el POS nunca recibe la contraseña ni
+   *   el PIN en claro (validado por schema).
+   * - Idempotente: si el email ya existe en el tenant, es un no-op.
+   * - Aislamiento: si el email pertenece a OTRO tenant, se rechaza con 409
+   *   (el outbox DTE lo reintentará sin éxito; el error queda visible como
+   *   evento fallido para el operador de plataforma).
+   * - El tenant debe estar proyectado (TENANT_CREADO se entrega antes); si
+   *   falta, 409 para que el outbox reintente.
+   */
+  const aplicarUsuarioInicial = async ({
+    operationId,
+    tenantId,
+    usuario,
+  }: {
+    operationId: string;
+    tenantId: string;
+    usuario: PayloadUsuarioInicial;
+  }) => {
+    const { rows: tenants } = await db.query('SELECT id FROM tenants WHERE id = $1', [tenantId]);
+    if (tenants.length === 0) {
+      logger.warn('USUARIO_INICIAL rechazado: tenant no proyectado', { operationId, tenantId });
+      throw { status: 409, mensaje: 'Tenant no proyectado en POS. Procesar TENANT_CREADO primero.' };
+    }
+
+    const { rows: enEsteTenant } = await db.query(
+      'SELECT id FROM usuarios WHERE email = $1 AND tenant_id = $2',
+      [usuario.email, tenantId]
+    );
+    if (enEsteTenant.length > 0) {
+      logger.info('USUARIO_INICIAL ya existía en el tenant (idempotente)', {
+        operationId,
+        tenantId,
+        email: usuario.email,
+      });
+      return;
+    }
+
+    const { rows: enOtroTenant } = await db.query(
+      'SELECT id FROM usuarios WHERE email = $1 AND tenant_id <> $2',
+      [usuario.email, tenantId]
+    );
+    if (enOtroTenant.length > 0) {
+      logger.warn('USUARIO_INICIAL rechazado: email en uso por otra empresa', {
+        operationId,
+        tenantId,
+        email: usuario.email,
+      });
+      throw { status: 409, mensaje: 'El email del administrador ya está en uso por otra empresa.' };
+    }
+
+    await db.query(
+      `INSERT INTO usuarios (tenant_id, sucursal_id, nombre, apellido, email, password_hash, pin_hash, rol)
+       VALUES ($1, NULL, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (email) DO NOTHING`,
+      [tenantId, usuario.nombre, usuario.apellido || null, usuario.email, usuario.password_hash, usuario.pin_hash, usuario.rol]
+    );
+
+    logger.info('Usuario inicial sincronizado desde DTE', {
+      operationId,
+      tenantId,
+      email: usuario.email,
+      rol: usuario.rol,
+      // NUNCA loguear hashes ni credenciales.
+    });
   };
 
   return { recibirEvento };

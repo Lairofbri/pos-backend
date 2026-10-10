@@ -1,16 +1,18 @@
 import Joi from 'joi';
 
-// Eventos de provisión que el POS acepta del DTE Service (Fase 2 + Fase 3).
-export const TIPOS_EVENTO_POS = ['TENANT_CREADO', 'BRANCH_VINCULADO'];
+// Eventos de provisión que el POS acepta del DTE Service
+// (Fase 2 + Fase 3 + USUARIO_INICIAL 2026-10-07).
+export const TIPOS_EVENTO_POS = ['TENANT_CREADO', 'BRANCH_VINCULADO', 'USUARIO_INICIAL'];
 
 const ESTADOS_FISCAL_SUCURSAL = ['pending_link', 'pending_mh_data', 'ready', 'inactive', 'blocked'];
 
 // Payload del evento TENANT_CREADO (Fase 2).
 const payloadTenantEvento = Joi.object({
   nombre: Joi.string().trim().min(2).max(150).required(),
+  nombre_comercial: Joi.string().trim().max(150).allow('', null).optional(),
   nit: Joi.string().trim().min(5).max(20).required(),
   nrc: Joi.string().trim().max(20).allow('', null).optional(),
-  email: Joi.string().email().max(150).allow('', null).optional(),
+  email: Joi.string().email({ tlds: { allow: false } }).max(150).allow('', null).optional(),
 });
 
 // Payload del evento BRANCH_VINCULADO (Fase 3): datos fiscales de LECTURA
@@ -42,6 +44,28 @@ const payloadBranchEvento = Joi.object({
   sync_error: Joi.string().trim().max(500).allow('', null).optional(),
 });
 
+// Payload del evento USUARIO_INICIAL (2026-10-07): SOLO hashes bcrypt.
+// La contraseña y el PIN en claro NUNCA llegan al POS; Joi rechaza cualquier
+// clave extra (allowUnknown=false), incluyendo un hipotético "password" plano.
+const payloadUsuarioInicialEvento = Joi.object({
+  nombre: Joi.string().trim().min(2).max(100).required(),
+  apellido: Joi.string().trim().max(100).allow('', null).optional(),
+  email: Joi.string().email({ tlds: { allow: false } }).lowercase().max(150).required(),
+  rol: Joi.string().valid('administrador').required(),
+  password_hash: Joi.string()
+    .pattern(/^\$2[aby]\$\d{2}\$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'password_hash debe ser un hash bcrypt.',
+    }),
+  pin_hash: Joi.string()
+    .pattern(/^\$2[aby]\$\d{2}\$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'pin_hash debe ser un hash bcrypt.',
+    }),
+});
+
 export const recibirEventoSchema = Joi.object({
   operation_id: Joi.string().uuid().required().messages({
     'any.required': 'operation_id es requerido.',
@@ -62,8 +86,10 @@ export const recibirEventoSchema = Joi.object({
       'any.only': `tipo_evento debe ser uno de: ${TIPOS_EVENTO_POS.join(', ')}.`,
     }),
   payload: Joi.alternatives().conditional('tipo_evento', {
-    is: 'TENANT_CREADO',
-    then: payloadTenantEvento.required(),
-    otherwise: payloadBranchEvento.required(),
+    switch: [
+      { is: 'TENANT_CREADO', then: payloadTenantEvento.required() },
+      { is: 'BRANCH_VINCULADO', then: payloadBranchEvento.required() },
+      { is: 'USUARIO_INICIAL', then: payloadUsuarioInicialEvento.required() },
+    ],
   }),
 });
