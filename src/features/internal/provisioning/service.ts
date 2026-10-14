@@ -204,7 +204,7 @@ const crearServicioEventosProvision = (dependencias: { db?: { query: typeof quer
     await db.query(
       `INSERT INTO usuarios (tenant_id, sucursal_id, nombre, apellido, email, password_hash, pin_hash, rol)
        VALUES ($1, NULL, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (email) DO NOTHING`,
+       ON CONFLICT (tenant_id, email) WHERE email IS NOT NULL DO NOTHING`,
       [tenantId, usuario.nombre, usuario.apellido || null, usuario.email, usuario.password_hash, usuario.pin_hash, usuario.rol]
     );
 

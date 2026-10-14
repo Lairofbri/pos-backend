@@ -65,6 +65,13 @@ const crearDbFake = () => {
     }
 
     if (sql.startsWith('INSERT INTO usuarios')) {
+      // Réplica del índice real: uq parcial (tenant_id, email) WHERE email IS
+      // NOT NULL. PostgreSQL exige que el arbiter del ON CONFLICT incluya el
+      // predicado — un target que no coincide con el índice falla en runtime
+      // ("no unique or exclusion constraint matching...").
+      if (!sql.includes('ON CONFLICT (tenant_id, email) WHERE email IS NOT NULL')) {
+        throw new Error('there is no unique or exclusion constraint matching the ON CONFLICT specification');
+      }
       // VALUES ($1, NULL, $2, $3, $4, $5, $6, $7)
       const fila: UsuarioRow = {
         id: `usr-${siguiente++}`,
