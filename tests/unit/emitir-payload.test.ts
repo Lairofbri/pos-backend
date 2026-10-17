@@ -202,3 +202,119 @@ test('necesitaUbicacionReceptor: solo con calle o departamento/municipio', () =>
   assert.equal(necesitaUbicacionReceptor({ cliente_direccion: 'Calle 1' }), true);
   assert.equal(necesitaUbicacionReceptor({ departamento: 'San Salvador', municipio: 'Soyapango' }), true);
 });
+
+// ─────────────────────────────────────────────────────────────
+// Regresión 2026-10-17 — CCF (03) desde el POS: precios con IVA incluido.
+//
+// El POS guarda precios CON IVA incluido y el generador del DTE declara los
+// CCF/NC/ND con precios SIN IVA y suma 13% en el resumen → el total del DTE
+// quedaba 13% arriba de lo cobrado y la emisión fallaba con
+// «La suma de pagos (10.00) no coincide con el total fiscal (11.30)».
+// Ahora el POS convierte los importes a base y marca `precios_con_iva`: el DTE
+// declara el IVA contenido y el total es exactamente lo cobrado.
+// ─────────────────────────────────────────────────────────────
+test('CCF: convierte los precios con IVA incluido a base sin IVA y marca precios_con_iva', () => {
+  const { payloadBase } = construirPayloadEmitir({
+    ordenId: 'o1',
+    orden,
+    items,
+    pagos,
+    sucursalFiscal: sucursal(BRANCH_A, EST_A),
+    tipoDte: '03',
+  });
+
+  const cuerpoItems = payloadBase.items as Array<Record<string, unknown>>;
+  assert.equal(payloadBase.precios_con_iva, true);
+  // 10 / 1.13 = 8.84955752 (redondeado a 8 decimales, como exige el esquema MH)
+  assert.equal(cuerpoItems[0].precio_unitario, 8.84955752);
+
+  // Los pagos fiscales siguen siendo el importe cobrado (10), no la base.
+  const pagosMH = payloadBase.pagos as Array<Record<string, unknown>>;
+  assert.equal(pagosMH[0].montoPago, 10);
+});
+
+test('FCF: conserva los precios con IVA incluido y NO marca precios_con_iva', () => {
+  const { payloadBase } = construirPayloadEmitir({
+    ordenId: 'o1',
+    orden,
+    items,
+    pagos,
+    sucursalFiscal: sucursal(BRANCH_A, EST_A),
+    tipoDte: '01',
+  });
+
+  const cuerpoItems = payloadBase.items as Array<Record<string, unknown>>;
+  assert.equal(cuerpoItems[0].precio_unitario, 10);
+  assert.ok(!('precios_con_iva' in payloadBase));
+});
+
+test('CCF: el descuento por ítem también viaja como base sin IVA', () => {
+  const itemsConDescuento = [
+    { ...items[0], descuento_porcentaje: 10 }, // 10 - 10% = 9 con IVA → 9/1.13
+  ];
+  const { payloadBase } = construirPayloadEmitir({
+    ordenId: 'o1',
+    orden: { ...orden, total: 9 },
+    items: itemsConDescuento,
+    pagos: [{ metodo: 'efectivo', total_pagado: 9, vuelto: 0 }],
+    sucursalFiscal: sucursal(BRANCH_A, EST_A),
+    tipoDte: '03',
+  });
+
+  const cuerpoItems = payloadBase.items as Array<Record<string, unknown>>;
+  assert.equal(cuerpoItems[0].descuento, 0.88495575); // 1 / 1.13
+});
+
+// Contrato con `dte-service` (tests/unit/ccf-precios-con-iva.test.js): esta tabla
+// (importe cobrado con IVA incluido → base sin IVA) debe coincidir en ambos
+// repos. Si cambia la conversión en un lado, el test del otro falla.
+const CONVERSION_BASE = [
+  { cobrado: 10, base: 8.84955752 },
+  { cobrado: 1, base: 0.88495575 },
+  { cobrado: 12.34, base: 10.92035398 },
+  { cobrado: 0.99, base: 0.87610619 },
+  { cobrado: 46.72, base: 41.34513274 },
+  { cobrado: 1234.56, base: 1092.53097345 },
+];
+
+test('CCF: la conversión a base coincide con el contrato compartido con dte-service', () => {
+  for (const { cobrado, base } of CONVERSION_BASE) {
+    const { payloadBase } = construirPayloadEmitir({
+      ordenId: 'o1',
+      orden: { ...orden, total: cobrado },
+      items: [{ ...items[0], precio_unitario: cobrado, subtotal: cobrado, cantidad: 1 }],
+      pagos: [{ metodo: 'efectivo', total_pagado: cobrado, vuelto: 0 }],
+      sucursalFiscal: sucursal(BRANCH_A, EST_A),
+      tipoDte: '03',
+    });
+    const cuerpoItems = payloadBase.items as Array<Record<string, unknown>>;
+    assert.equal(cuerpoItems[0].precio_unitario, base, `base de ${cobrado}`);
+    assert.equal((payloadBase.pagos as Array<Record<string, unknown>>)[0].montoPago, cobrado);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// Regresión 2026-10-17 — la propina es operativa, NUNCA fiscal.
+//
+// La orden se cobra con propina (fiscal + propina) pero el DTE se emite solo
+// por el total fiscal: los pagos fiscales se capan al total de la orden y la
+// propina no aparece en ningún campo del payload.
+// ─────────────────────────────────────────────────────────────
+test('la propina no viaja al DTE: pagos capados al total fiscal y sin campos de propina', () => {
+  const ordenConPropina = { ...orden, propina_porcentaje: 10, propina_monto: 1 };
+  const pagoConPropina = [{ metodo: 'efectivo', total_pagado: 11, vuelto: 0 }];
+
+  const { payloadBase } = construirPayloadEmitir({
+    ordenId: 'o1',
+    orden: ordenConPropina,
+    items,
+    pagos: pagoConPropina,
+    sucursalFiscal: sucursal(BRANCH_A, EST_A),
+    tipoDte: '01',
+  });
+
+  const pagosMH = payloadBase.pagos as Array<Record<string, unknown>>;
+  assert.equal(pagosMH.length, 1);
+  assert.equal(pagosMH[0].montoPago, 10, 'el pago fiscal debe ser el total fiscal (10), no lo cobrado con propina (11)');
+  assert.equal(JSON.stringify(payloadBase).includes('propina'), false);
+});

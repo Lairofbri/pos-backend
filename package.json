@@ -25,6 +25,7 @@
     "test:emision": "tsx --test tests/unit/emitir-contexto-fiscal.test.ts tests/unit/emitir-payload.test.ts",
     "test:api-key-dte": "tsx --test tests/unit/api-key-dte.test.ts",
     "test:escpos": "tsx --test tests/unit/escpos.test.ts",
+    "verificar:impresion-e2e": "tsx scripts/verificar-impresion-e2e.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report",

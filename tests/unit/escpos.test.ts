@@ -128,6 +128,34 @@ test('el QR usa GS ( k modelo 2, ECC M, tamaño de módulo y la URL auténtica',
   assert.equal(datos.toString('latin1'), url, 'los datos son la URL fiscal, sin transformar');
 });
 
+test('el QR se almacena con longitudes y secuencia correctas (GS ( k, cn=49, fn=80)', () => {
+  const url = dteDemo.qr_url;
+  const qr = comandoQR(url);
+  const datos = codificarTexto(url);
+
+  // El comando de almacenamiento declara pL/pH = largo de datos + "1P0".
+  const largoEsperado = datos.length + 3;
+  const almacenar = Buffer.from([
+    0x1d, 0x28, 0x6b,
+    largoEsperado & 0xff, (largoEsperado >> 8) & 0xff,
+    0x31, 0x50, 0x30,
+  ]);
+  assert.ok(qr.includes(almacenar), 'cabecera de almacenamiento con pL/pH correctos');
+
+  // Los datos van inmediatamente después de la cabecera y son la URL tal cual.
+  const inicio = qr.indexOf(almacenar) + almacenar.length;
+  assert.equal(qr.subarray(inicio, inicio + datos.length).toString('latin1'), url);
+
+  // La secuencia respeta el orden del firmware: modelo -> tamaño -> ECC -> datos -> imprimir.
+  const posModelo = qr.indexOf(Buffer.from([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41]));
+  const posTamano = qr.indexOf(Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43]));
+  const posEcc = qr.indexOf(Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45]));
+  const posDatos = qr.indexOf(almacenar);
+  const posImprimir = qr.indexOf(Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30]));
+  assert.ok(posModelo < posTamano && posTamano < posEcc && posEcc < posDatos && posDatos < posImprimir);
+  assert.equal(posImprimir + 8, qr.length, 'el QR termina con el comando de impresión');
+});
+
 test('renderEscpos abre con ESC @ y cierra con avance y corte GS V', () => {
   const bytes = renderEscpos({ texto: 'Hola', qrUrl: dteDemo.qr_url, lineasAntesDeCorte: 4 });
 
@@ -193,6 +221,45 @@ test('la factura usa los datos del DTE, QR, sello y no imprime marcadores vacío
   assert.ok(texto.includes('QR DE CONSULTA HACIENDA'));
   assert.ok(texto.includes('Sin cebolla. + Aguacate'), 'sub-detalle no fiscal de la línea');
   assert.ok(!texto.includes('N/D'), 'no imprime marcadores de ejemplo');
+});
+
+test('la factura imprime descuentos, no sujeta/exenta y el IVA del FCF sin recalcular', () => {
+  const dteConDescuento = {
+    ...dteDemo,
+    json_dte: {
+      ...dteDemo.json_dte,
+      resumen: {
+        totalNoSuj: 1.5,
+        totalExenta: 2,
+        totalGravada: 10,
+        totalDescu: 1.5,
+        subTotal: 12,
+        montoTotalOperacion: 12,
+        totalPagar: 12,
+        totalIva: 1.15,
+        totalLetras: 'DOCE 00/100 DOLARES',
+        condicionOperacion: 1,
+        tributos: null,
+        pagos: [{ codigo: '01', montoPago: 12 }],
+      },
+      cuerpoDocumento: [
+        { cantidad: 1, descripcion: 'Plato exento', ventaExenta: 2, ventaGravada: 0, montoDescu: 0 },
+        { cantidad: 1, descripcion: 'Bebida', ventaGravada: 10, ventaNoSuj: 1.5, montoDescu: 1.5 },
+      ],
+    },
+  };
+
+  const texto = formatoFactura({ orden: ordenDemo, tenant: tenantDemo, items: itemsDemo, dte: dteConDescuento, ancho: 42 });
+
+  assert.ok(texto.includes('No sujeto:'), 'declara las operaciones no sujetas');
+  assert.ok(texto.includes('Exenta:'), 'declara las operaciones exentas');
+  assert.ok(texto.includes('Descuento:'), 'declara el descuento global');
+  assert.ok(texto.includes('Gravada (IVA incl.):'), 'el FCF rotula la gravada con IVA incluido');
+  assert.ok(texto.includes('Base sin IVA:'), 'muestra la base sin IVA del FCF');
+  assert.ok(texto.includes('IVA incluido (13%):'), 'muestra el IVA contenido del FCF');
+  for (const linea of lineas(texto)) {
+    assert.ok(linea.length <= 42, `linea de ${linea.length}`);
+  }
 });
 
 test('la factura omite sello y QR cuando el DTE no los aporta', () => {

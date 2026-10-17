@@ -1,9 +1,25 @@
 import { query, getClient } from '../../../shared/config/database.js';
 import { obtenerClientePorTenant } from '../../../shared/dte-client.js';
 import { servicioEmpresaDte, type ContextoFiscalEstablecimiento } from '../../../shared/dte-empresa.js';
+import { TASA_IVA } from '../../../shared/utils/constants.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { limpiarPayloadSecreto } from '../payload-seguro.js';
 import { mapearEstadoFiscal, extraerResultado } from '../estados.js';
+
+// Tipos de DTE cuyo esquema oficial declara **precios sin IVA** (CCF, NC, ND).
+// El POS guarda precios CON IVA incluido (`calcularTotales` extrae el IVA del
+// total), así que para estos tipos hay que convertir los importes a base y
+// marcar `precios_con_iva` en el payload: el DTE declara el IVA contenido y el
+// total coincide exactamente con lo cobrado (si no, `validarPagosContraTotal`
+// rechaza la emisión porque el generador sumaba 13% sobre un precio que ya
+// incluía IVA).
+const TIPOS_PRECIO_SIN_IVA = new Set(['03', '05', '06']);
+
+const redondear8 = (valor: number) => Math.round(valor * 1e8) / 1e8;
+
+/** Importe con IVA incluido → base sin IVA (para CCF/NC/ND). */
+const aBaseSinIva = (valor: number) => redondear8(valor / (1 + TASA_IVA));
+
 
 const MAPA_TIPO_DOC: Record<string, string> = {
   dui: '13', nit: '36', pasaporte: '03', carnet_residente: '02', otro: '37',
@@ -249,18 +265,20 @@ const obtenerOrdenCompleta = async (tenantId: string, ordenId: string) => {
   return { orden, items: items as ItemRow[], pagos: pagos as PagoRow[] };
 };
 
-const mapearItems = (items: ItemRow[]) => {
+const mapearItems = (items: ItemRow[], tipoDte?: string) => {
+  const convertirABase = tipoDte !== undefined && TIPOS_PRECIO_SIN_IVA.has(tipoDte);
   return items
     .filter((item) => item.producto_id)
     .map((item) => {
       const subtotal = Number(item.subtotal) || 0;
       const descuentoManual = subtotal * (Number(item.descuento_porcentaje) || 0) / 100;
-      const descuento = Number(item.descuento_promo) + descuentoManual;
+      const descuento = Math.round((Number(item.descuento_promo) + descuentoManual) * 100) / 100;
+      const precioUnitario = Number(item.precio_unitario) || 0;
       return {
         descripcion: (item.producto_nombre as string) || (item.descripcion as string) || 'Producto',
-        precio_unitario: Number(item.precio_unitario) || 0,
-cantidad: Number(item.cantidad) || 1,
-        descuento: Math.round(descuento * 100) / 100,
+        precio_unitario: convertirABase ? aBaseSinIva(precioUnitario) : precioUnitario,
+        cantidad: Number(item.cantidad) || 1,
+        descuento: convertirABase ? aBaseSinIva(descuento) : descuento,
         codigo: (item.producto_codigo as string) || null,
         tipo_item: 1,
         uni_medida: 99,
@@ -329,8 +347,9 @@ export const construirPayloadEmitir = ({
   tipoDte: string;
 }) => {
   const totalFiscalCents = toCents(orden.total);
-  const cuerpoItems = mapearItems(items);
+  const cuerpoItems = mapearItems(items, tipoDte);
   const pagosMH = construirPagosMH(pagos, totalFiscalCents);
+  const preciosConIva = TIPOS_PRECIO_SIN_IVA.has(tipoDte);
 
   const payloadBase: Record<string, unknown> = {
     items: cuerpoItems,
@@ -338,6 +357,10 @@ export const construirPayloadEmitir = ({
     metodo_pago: pagosMH.length > 1 ? 'mixto' : pagosMH[0]?.codigo === '03' ? 'tarjeta' : 'efectivo',
     orden_referencia: orden.numero_orden?.toString() || null,
     establecimiento_id: sucursalFiscal.dte_establecimiento_id,
+    // El POS guarda precios con IVA incluido y los ítems ya viajan como base
+    // (CCF/NC/ND): el DTE declara el IVA contenido en lo cobrado, así el total
+    // del documento es exactamente lo cobrado y los pagos fiscales cuadran.
+    ...(preciosConIva ? { precios_con_iva: true } : {}),
     // `branch_id` es el vínculo operativo histórico del POS y es OPCIONAL: las
     // sucursales creadas en el DTE Service pueden no tenerlo. Se omite en vez
     // de enviar `null` (el DTE solo lo usa como verificación si viene).

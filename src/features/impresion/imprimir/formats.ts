@@ -404,7 +404,18 @@ export const formatoFactura = ({ orden, tenant, items, pagos, dte, ancho = ANCHO
   const descuento = Number(resumen.totalDescu ?? orden.descuento ?? 0);
   if (totalNoSuj > 0) l.push(filaMonto(' No sujeto:', totalNoSuj, ANCHO));
   if (totalExenta > 0) l.push(filaMonto(' Exenta:', totalExenta, ANCHO));
-  if (totalGravada > 0) l.push(filaMonto(' Gravada:', totalGravada, ANCHO));
+  // El FCF (01) declara la gravada CON el IVA incluido (esquema oficial: como los
+  // FCF reales aceptados); en CCF/NC/ND (03/05/06) la gravada ya es la base sin
+  // IVA. Se rotula cada caso y en el FCF se muestra la base y el IVA contenido.
+  const esFcf = tipoDte === '01';
+  if (totalGravada > 0) {
+    l.push(filaMonto(esFcf ? ' Gravada (IVA incl.):' : ' Gravada (sin IVA):', totalGravada, ANCHO));
+  }
+  const ivaIncluido = esFcf ? Number(resumen.totalIva || 0) : 0;
+  if (totalGravada > 0 && ivaIncluido > 0) {
+    l.push(filaMonto(' Base sin IVA:', Math.round((totalGravada - ivaIncluido) * 100) / 100, ANCHO));
+    l.push(filaMonto(' IVA incluido (13%):', ivaIncluido, ANCHO));
+  }
   if (descuento > 0) l.push(filaMonto(' Descuento:', descuento, ANCHO));
   l.push(filaMonto(' Subtotal:', Number(resumen.subTotal ?? orden.subtotal ?? 0), ANCHO));
   for (const tributo of Array.isArray(resumen.tributos) ? resumen.tributos : []) {
