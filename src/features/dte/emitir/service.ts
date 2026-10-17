@@ -29,9 +29,9 @@ const buscarCodigoMuni = async (nombre: string, deptoCod: string): Promise<strin
  * F6 — ¿la orden trae datos de ubicación del receptor?
  *
  * Solo se envía la ubicación cuando hay calle o departamento/municipio del
- * cliente. Sin datos NO se inventa una dirección: el DTE deja `direccion: null`
- * en el FCF (válido en el esquema oficial) y aplica sus propios defaults en
- * CCF/NC/ND/FSE, donde la dirección es obligatoria.
+ * cliente. Sin datos NO se inventa una dirección: el FCF admite
+ * `direccion: null` (esquema oficial) y en CCF el POS exige la ubicación del
+ * cliente con un 400 accionable antes de llamar al DTE.
  */
 export const necesitaUbicacionReceptor = (orden: OrdenRow) =>
   Boolean(orden.cliente_direccion || (orden.departamento && orden.municipio));
