@@ -1,6 +1,6 @@
 import { query, getClient } from '../../../shared/config/database.js';
 import { obtenerClientePorTenant } from '../../../shared/dte-client.js';
-import { servicioEmpresaDte } from '../../../shared/dte-empresa.js';
+import { servicioEmpresaDte, type ContextoFiscalEstablecimiento } from '../../../shared/dte-empresa.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { limpiarPayloadSecreto } from '../payload-seguro.js';
 import { mapearEstadoFiscal, extraerResultado } from '../estados.js';
@@ -262,66 +262,118 @@ export const construirPayloadEmitir = ({
   return { payloadBase, totalFiscalCents, cuerpoItems };
 };
 
-const obtenerContextoFiscalSucursal = async (tenantId: string, orden: OrdenRow): Promise<SucursalFiscalRow> => {
-  const referencia = orden.sucursal_id as string | null | undefined;
-  const contextoBase = {
-    tenant_id: tenantId,
-    sucursal_id: referencia || null,
-  };
+/**
+ * F5 — resolución del contexto fiscal de la emisión.
+ *
+ * Orden:
+ * 1. La sucursal de la orden (`establecimiento_id` canónico o `branch_id`).
+ * 2. Si no resuelve (orden sin sucursal o con un id retirado) el
+ *    establecimiento PREDETERMINADO del tenant (la matriz fiscal del DTE): el
+ *    cobro ya está hecho y la facturación no se puede bloquear.
+ * 3. Sin establecimiento disponible → 409 explícito.
+ *
+ * Se expone como factory para las pruebas unitarias; el uso normal es la
+ * instancia `obtenerContextoFiscalSucursal`.
+ */
+export const crearResolverContextoFiscal = (
+  dependencias: {
+    resolverEstablecimiento?: (
+      tenantId: string,
+      referencia: string
+    ) => Promise<ContextoFiscalEstablecimiento | null>;
+    resolverPredeterminado?: (
+      tenantId: string
+    ) => Promise<ContextoFiscalEstablecimiento | null>;
+  } = {}
+) => {
+  const resolverEstablecimiento =
+    dependencias.resolverEstablecimiento ??
+    ((tenantId: string, referencia: string) =>
+      servicioEmpresaDte.resolverEstablecimientoFiscal(tenantId, referencia));
+  const resolverPredeterminado =
+    dependencias.resolverPredeterminado ??
+    ((tenantId: string) => servicioEmpresaDte.resolverEstablecimientoFiscalPredeterminado(tenantId));
 
-  if (!referencia) {
-    logger.warn('Emisión DTE bloqueada: orden sin sucursal operativa', contextoBase);
-    throw {
-      status: 409,
-      mensaje: 'La orden no tiene una sucursal operativa y no puede emitir un DTE.',
+  return async (tenantId: string, orden: OrdenRow): Promise<SucursalFiscalRow> => {
+    const referencia = orden.sucursal_id as string | null | undefined;
+    const contextoBase = {
+      tenant_id: tenantId,
+      sucursal_id: referencia || null,
     };
-  }
 
-  // F3 — el POS ya no lee la tabla local `sucursales`: resuelve el
-  // establecimiento contra el DTE (fuente de verdad). Acepta el
-  // `establecimiento_id` canónico o el `branch_id` (que es lo que el POS
-  // histórico persiste en `sucursal_id`).
-  const establecimiento = await servicioEmpresaDte.resolverEstablecimientoFiscal(tenantId, referencia);
+    // F3 — el POS ya no lee la tabla local `sucursales`: resuelve el
+    // establecimiento contra el DTE (fuente de verdad). Acepta el
+    // `establecimiento_id` canónico o el `branch_id` (que es lo que el POS
+    // histórico persiste en `sucursal_id`).
+    let establecimiento = referencia
+      ? await resolverEstablecimiento(tenantId, referencia)
+      : null;
 
-  if (!establecimiento) {
-    logger.warn('Emisión DTE bloqueada: la sucursal no es un establecimiento del DTE', contextoBase);
-    throw {
-      status: 409,
-      mensaje: 'La sucursal de la orden no corresponde a un establecimiento del DTE de la empresa.',
+    if (referencia && !establecimiento) {
+      logger.warn('La sucursal de la orden no es un establecimiento del DTE — se evalúa el predeterminado', contextoBase);
+    }
+
+    // F5 — resiliencia de emisión: las órdenes nacidas durante la transición
+    // (o creadas por un usuario sin sucursal asignada) quedaron con
+    // `sucursal_id` NULL; y las históricas pueden traer un id local ya
+    // retirado. En ambos casos el cobro YA está hecho y no se puede bloquear la
+    // facturación: se emite con el establecimiento PREDETERMINADO del tenant
+    // (la matriz fiscal del DTE). La elección se registra para trazabilidad.
+    if (!establecimiento) {
+      establecimiento = await resolverPredeterminado(tenantId);
+      if (establecimiento) {
+        logger.warn('Emisión DTE con el establecimiento predeterminado de la empresa', {
+          ...contextoBase,
+          dte_establecimiento_id: establecimiento.dte_establecimiento_id,
+          branch_id: establecimiento.branch_id,
+        });
+      }
+    }
+
+    if (!establecimiento) {
+      logger.warn('Emisión DTE bloqueada: no hay establecimiento fiscal disponible', contextoBase);
+      throw {
+        status: 409,
+        mensaje: referencia
+          ? 'La sucursal de la orden no corresponde a un establecimiento del DTE de la empresa.'
+          : 'La orden no tiene una sucursal operativa y la empresa no tiene establecimientos en el DTE.',
+      };
+    }
+
+    const contextoFiscal = {
+      ...contextoBase,
+      branch_id: establecimiento.branch_id,
+      dte_establecimiento_id: establecimiento.dte_establecimiento_id,
+      fiscal_status: establecimiento.fiscal_status,
+      sucursal_activa: establecimiento.activo,
     };
-  }
 
-  const contextoFiscal = {
-    ...contextoBase,
-    branch_id: establecimiento.branch_id,
-    dte_establecimiento_id: establecimiento.dte_establecimiento_id,
-    fiscal_status: establecimiento.fiscal_status,
-    sucursal_activa: establecimiento.activo,
-  };
+    if (
+      !establecimiento.activo
+      || establecimiento.fiscal_status === 'inactive'
+      || establecimiento.fiscal_status !== 'ready'
+      || !establecimiento.branch_id
+      || !establecimiento.dte_establecimiento_id
+    ) {
+      logger.warn('Emisión DTE bloqueada: vínculo fiscal no está listo', contextoFiscal);
+      throw {
+        status: 409,
+        mensaje: 'La sucursal no tiene un vínculo fiscal DTE confirmado y listo para emitir.',
+      };
+    }
 
-  if (
-    !establecimiento.activo
-    || establecimiento.fiscal_status === 'inactive'
-    || establecimiento.fiscal_status !== 'ready'
-    || !establecimiento.branch_id
-    || !establecimiento.dte_establecimiento_id
-  ) {
-    logger.warn('Emisión DTE bloqueada: vínculo fiscal no está listo', contextoFiscal);
-    throw {
-      status: 409,
-      mensaje: 'La sucursal no tiene un vínculo fiscal DTE confirmado y listo para emitir.',
+    logger.info('Contexto fiscal resuelto para emisión DTE (desde el DTE)', contextoFiscal);
+    return {
+      id: establecimiento.id,
+      branch_id: establecimiento.branch_id,
+      dte_establecimiento_id: establecimiento.dte_establecimiento_id,
+      fiscal_status: establecimiento.fiscal_status,
+      activo: establecimiento.activo,
     };
-  }
-
-  logger.info('Contexto fiscal resuelto para emisión DTE (desde el DTE)', contextoFiscal);
-  return {
-    id: establecimiento.id,
-    branch_id: establecimiento.branch_id,
-    dte_establecimiento_id: establecimiento.dte_establecimiento_id,
-    fiscal_status: establecimiento.fiscal_status,
-    activo: establecimiento.activo,
   };
 };
+
+const obtenerContextoFiscalSucursal = crearResolverContextoFiscal();
 
 export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
   const ordenId = datos.orden_id as string;

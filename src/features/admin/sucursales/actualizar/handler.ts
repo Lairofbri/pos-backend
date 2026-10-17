@@ -9,9 +9,9 @@ import { MENSAJE_SUCURSAL_EDICION_SOLO_DTE } from '../../../../shared/empresa.js
  * La edición de sucursales (nombre, dirección, teléfono, principal, activo) se
  * administra en el DTE Service. El POS ya no modifica establecimientos.
  *
- * La ruta se conserva para responder con un error explícito y auditar el
- * intento. Rollback (§6 del spec): volver a delegar en
- * `actualizarSucursal` (el servicio sigue disponible).
+ * F5 (2026-10-16): la tabla local `sucursales` y su servicio de edición se
+ * retiraron; esta ruta queda SOLO como error explícito y auditoría. Rollback:
+ * recrear la tabla (ver bloque de rollback de la migración 081).
  */
 export const handler = async (req: Request, res: Response) => {
   registrarIntentoEscrituraBloqueado({

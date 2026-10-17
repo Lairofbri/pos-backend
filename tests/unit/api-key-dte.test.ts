@@ -2,7 +2,8 @@
 // Entrega automática de la API Key de integración POS → DTE (2026-10-17).
 //
 // Criterios:
-// - Se guarda CIFRADA (AES-256-GCM) y se limpia el texto plano legado.
+// - Se guarda CIFRADA (AES-256-GCM) — única forma de persistencia (F5 retiró
+//   la columna en claro `dte_api_key`).
 // - La clave no se pierde: descifra exactamente lo recibido.
 // - Tenant no proyectado → 409 (el DTE puede reintentar tras TENANT_CREADO).
 // - Clave inválida (corta) → 400.
@@ -22,7 +23,6 @@ const CLAVE_ROTADA = 'pos_dte_ROTADA9876543210';
 const crearDbFake = () => {
   const tenants = new Set<string>();
   let enc: string | null = null;
-  let plano: string | null = 'texto-plano-legado';
 
   const query = async (text: string, params: unknown[] = []) => {
     const sql = text.replace(/\s+/g, ' ').trim();
@@ -33,7 +33,6 @@ const crearDbFake = () => {
     if (sql.startsWith('UPDATE tenants') && sql.includes('dte_api_key_enc')) {
       if (!tenants.has(params[1] as string)) throw new Error('violates foreign key constraint');
       enc = params[0] as string;
-      plano = null;
       return { rows: [] };
     }
     throw new Error(`Query no contemplada en el fake: ${sql}`);
@@ -43,11 +42,10 @@ const crearDbFake = () => {
     query,
     proyectarTenant: (tenantId: string) => tenants.add(tenantId),
     obtenerEnc: () => enc,
-    obtenerPlano: () => plano,
   };
 };
 
-test('guarda la API Key cifrada y limpia el texto plano legado', async () => {
+test('guarda la API Key cifrada (única persistencia; sin columna en claro desde F5)', async () => {
   const db = crearDbFake();
   db.proyectarTenant(TENANT);
   const servicio = crearServicioEventosProvisionFactory({ db });
@@ -58,7 +56,6 @@ test('guarda la API Key cifrada y limpia el texto plano legado', async () => {
   const enc = db.obtenerEnc();
   assert.ok(enc, 'se persistió el valor cifrado');
   assert.ok(enc!.startsWith('enc:v2:'), 'formato versionado de cifrado');
-  assert.equal(db.obtenerPlano(), null, 'no queda texto plano');
   assert.equal(desencriptarTexto(enc, env.POS_ENCRYPTION_KEY), CLAVE, 'descifra exactamente la clave recibida');
 });
 

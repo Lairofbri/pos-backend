@@ -1,6 +1,6 @@
 -- =============================================
 -- Limpieza de datos demo para Restaurante Demo
--- Conserva: menus, usuarios, permisos, catalogos, unidades, tenants, sucursales
+-- Conserva: menus, usuarios, permisos, catalogos, unidades, tenants
 -- Elimina: todo dato transaccional/operativo
 -- =============================================
 

@@ -1,140 +1,67 @@
 // tests/unit/sucursales.test.ts
-// Pruebas unitarias de Fase 3 — vínculo de sucursales POS ↔ DTE.
+// Pruebas unitarias de F5 — el POS deja de proyectar empresa/sucursal
+// (spec «DTE única fuente de verdad de empresa y sucursal», 2026-10-16).
 //
-// Criterios cubiertos (spec §10 Fase 3, §12 Sucursales/Provisión):
-// - Crear sucursal POS genera branch_id y solicita el vínculo al DTE.
-// - Fallo del DTE → sucursal queda pending_link + sync_error (retry seguro).
-// - Reintentar la misma operación NO duplica sucursales (idempotencia).
-// - El evento BRANCH_VINCULADO crea/actualiza la proyección por
-//   (tenant_id, branch_id) sin duplicar.
-// - BRANCH_VINCULADO sin tenant proyectado → 409 (el outbox reintenta).
+// Criterio de salida de F5: la base del POS no tiene datos de empresa ni tabla
+// `sucursales`; el sistema opera con el DTE como fuente.
+//
+// Se cubre:
+// - `TENANT_CREADO` proyecta SOLO identidad técnica del tenant (id/activo) y
+//   siembra el onboarding operativo (permisos + catálogos).
+// - `BRANCH_VINCULADO` se acepta (ack idempotente para el outbox del DTE) pero
+//   NO escribe nada: no existe proyección local de sucursales.
+// - El resolver de sucursal valida `X-Sucursal-Id` contra los establecimientos
+//   del DTE (establecimiento_id canónico), degrada si el DTE no responde, cae
+//   al `sucursal_id` del JWT y, si no hay ninguno, usa el establecimiento
+//   PREDETERMINADO del DTE (matriz) para que las órdenes nunca nazcan sin
+//   sucursal (era la causa del 409 al emitir el DTE).
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { crearServicioSucursalesFactory } from '../../src/features/admin/sucursales/crear/service.js';
-import { crearServicioVinculoSucursalFactory } from '../../src/features/admin/sucursales/vincular/service.js';
+import type { NextFunction, Request, Response } from 'express';
 import { crearServicioEventosProvisionFactory } from '../../src/features/internal/provisioning/service.js';
+import { crearResolverSucursal } from '../../src/shared/middlewares/sucursal.middleware.js';
 import { recibirEventoSchema } from '../../src/features/internal/provisioning/request.js';
 
 const TENANT = 'a0000000-0000-4000-8000-000000000001';
+const OTRO_TENANT = 'a0000000-0000-4000-8000-000000000002';
 const BRANCH = 'b0000000-0000-4000-8000-000000000005';
 const ESTABLECIMIENTO = 'e0000000-0000-4000-8000-000000000001';
 const OPERATION = 'c0000000-0000-4000-8000-000000000001';
 
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-type SucursalRow = {
-  id: string;
-  tenant_id: string;
-  branch_id: string | null;
-  dte_establecimiento_id: string | null;
-  nombre: string;
-  direccion: string | null;
-  telefono: string | null;
-  es_principal: boolean;
-  activo: boolean;
-  fiscal_status: string;
-  sync_error: string | null;
-};
-
 const crearDbFake = () => {
   const idempotencia = new Map<string, { status: number; body: Record<string, unknown> }>();
-  const sucursales = new Map<string, SucursalRow>();
-  const tenants = new Set<string>();
+  const tenants = new Map<string, { id: string; activo: boolean }>();
+  const siembras: string[] = [];
+  const escriturasProhibidas: string[] = [];
 
   const query = async (text: string, params: unknown[] = []) => {
     const sql = text.replace(/\s+/g, ' ').trim();
 
-    // Idempotencia
-    if (sql.includes('SELECT response FROM idempotency_keys')) {
+    if (sql.startsWith('SELECT response FROM idempotency_keys')) {
       const encontrado = idempotencia.get(`${params[0]}|${params[1]}`);
       return { rows: encontrado ? [{ response: encontrado }] : [] };
     }
-    if (sql.includes('INSERT INTO idempotency_keys')) {
+    if (sql.startsWith('INSERT INTO idempotency_keys')) {
       idempotencia.set(`${params[0]}|${params[1]}`, JSON.parse(params[3] as string));
       return { rows: [] };
     }
-
-    // Tenant proyectado
-    if (sql.includes('SELECT id FROM tenants WHERE id')) {
+    if (sql.startsWith('INSERT INTO tenants')) {
+      tenants.set(params[0] as string, { id: params[0] as string, activo: true });
+      return { rows: [] };
+    }
+    if (sql.startsWith('SELECT id FROM tenants WHERE id')) {
       return { rows: tenants.has(params[0] as string) ? [{ id: params[0] }] : [] };
     }
-
-    // BRANCH_VINCULADO: upsert por (tenant_id, branch_id) — índice parcial
-    if (sql.startsWith('INSERT INTO sucursales') && sql.includes('ON CONFLICT (tenant_id, branch_id) WHERE')) {
-      const clave = `${params[0]}|${params[1]}`;
-      const existente = sucursales.get(clave);
-      if (existente) {
-        Object.assign(existente, {
-          dte_establecimiento_id: params[2],
-          nombre: params[3],
-          direccion: (params[4] as string | null) ?? existente.direccion,
-          telefono: (params[5] as string | null) ?? existente.telefono,
-          fiscal_status: params[6],
-          activo: params[7],
-          sync_error: null,
-        });
-      } else {
-        sucursales.set(clave, {
-          id: `suc-${clave}`,
-          tenant_id: params[0] as string,
-          branch_id: params[1] as string,
-          dte_establecimiento_id: params[2] as string,
-          nombre: params[3] as string,
-          direccion: (params[4] as string | null) ?? null,
-          telefono: (params[5] as string | null) ?? null,
-          es_principal: false,
-          activo: params[7] as boolean,
-          fiscal_status: params[6] as string,
-          sync_error: null,
-        });
-      }
+    if (sql.startsWith('CALL sp_sembrar_')) {
+      siembras.push(sql.slice('CALL '.length).replace('($1)', ''));
       return { rows: [] };
     }
 
-    // Crear sucursal (flujo crearSucursal) — fiscal_status es literal SQL
-    if (sql.startsWith('INSERT INTO sucursales')) {
-      const clave = `${params[0]}|${params[1]}`;
-      const fila: SucursalRow = {
-        id: `suc-${clave}`,
-        tenant_id: params[0] as string,
-        branch_id: params[1] as string,
-        dte_establecimiento_id: null,
-        nombre: params[2] as string,
-        direccion: (params[3] as string | null) ?? null,
-        telefono: (params[4] as string | null) ?? null,
-        es_principal: params[5] as boolean,
-        activo: true,
-        fiscal_status: 'pending_link',
-        sync_error: null,
-      };
-      sucursales.set(clave, fila);
-      return { rows: [fila] };
-    }
-
-    // Actualizar tras vínculo exitoso (crearSucursal / vincular)
-    if (sql.includes('SET dte_establecimiento_id = $1, fiscal_status = $2')
-      && sql.includes('sync_error = NULL')) {
-      const fila = [...sucursales.values()].find((s) => s.id === params[2]);
-      if (fila) {
-        fila.dte_establecimiento_id = params[0] as string;
-        fila.fiscal_status = params[1] as string;
-        fila.sync_error = null;
-      }
-      return { rows: fila ? [fila] : [] };
-    }
-
-    // Actualizar sync_error (fallo del DTE)
-    if (sql.includes('SET sync_error = $1')) {
-      const fila = [...sucursales.values()].find((s) => s.id === params[1]);
-      if (fila) fila.sync_error = params[0] as string;
-      return { rows: fila ? [fila] : [] };
-    }
-
-    // Vincular: SELECT de la sucursal
-    if (sql.includes('FROM sucursales WHERE id = $1 AND tenant_id = $2')) {
-      const fila = [...sucursales.values()].find((s) => s.id === params[0] && s.tenant_id === params[1]);
-      return { rows: fila ? [fila] : [] };
+    // F5: cualquier escritura a `sucursales` es un fallo del contrato.
+    if (/^(INSERT INTO|UPDATE|DELETE FROM) sucursales/i.test(sql)) {
+      escriturasProhibidas.push(sql);
+      throw new Error(`F5: el POS no debe escribir en \`sucursales\`: ${sql}`);
     }
 
     throw new Error(`Query no contemplada en el fake: ${sql}`);
@@ -142,179 +69,63 @@ const crearDbFake = () => {
 
   return {
     query,
-    sembrarTenant: (id: string) => tenants.add(id),
-    sembrarSucursal: (fila: SucursalRow) => sucursales.set(`${fila.tenant_id}|${fila.branch_id}`, fila),
-    obtenerSucursal: (clave: string) => sucursales.get(clave),
-    conteoSucursales: () => sucursales.size,
-    registrosIdempotencia: () => idempotencia.size,
+    proyectarTenant: (tenantId: string) =>
+      tenants.set(tenantId, { id: tenantId, activo: true }),
+    obtenerTenant: (tenantId: string) => tenants.get(tenantId),
+    contarTenants: () => tenants.size,
+    siembras: () => [...siembras],
+    escriturasProhibidas: () => [...escriturasProhibidas],
   };
 };
 
-const crearClienteFake = (sobre: {
-  onPost?: (url: string, body: Record<string, unknown>) => unknown;
-  onPostError?: () => unknown;
-} = {}) => {
-  const llamadas: { url: string; body: Record<string, unknown> }[] = [];
-  const cliente = {
-    post: async (url: string, body: Record<string, unknown>) => {
-      llamadas.push({ url, body });
-      if (sobre.onPostError) throw sobre.onPostError();
-      return sobre.onPost ? sobre.onPost(url, body) : { ok: true };
+// ═════════════════════════════════════════════
+// Recepción de eventos de provisión
+// ═════════════════════════════════════════════
+
+test('TENANT_CREADO proyecta solo identidad técnica (id/activo) y siembra el onboarding', async () => {
+  const db = crearDbFake();
+  const servicio = crearServicioEventosProvisionFactory({ db });
+
+  const resultado = await servicio.recibirEvento({
+    operationId: OPERATION,
+    tipoEvento: 'TENANT_CREADO',
+    tenantId: TENANT,
+    payload: {
+      nombre: 'COPY SERVITEC SOCIEDAD ANONIMA DE CAPITAL VARIABLE',
+      nombre_comercial: 'COPY SERVITEC',
+      nit: '0623-271125-102-2',
+      nrc: '3765751',
     },
-  };
-  return { cliente, llamadas };
-};
-
-// ═════════════════════════════════════════════
-// crearSucursal
-// ═════════════════════════════════════════════
-
-test('crearSucursal genera branch_id, crea en pending_link y vincula al DTE', async () => {
-  const db = crearDbFake();
-  const { cliente, llamadas } = crearClienteFake({
-    onPost: () => ({ establecimiento_id: ESTABLECIMIENTO, fiscal_status: 'pending_mh_data' }),
-  });
-  const servicio = crearServicioSucursalesFactory({ db, crearClienteInterno: () => cliente });
-
-  const resultado = await servicio.crearSucursal({
-    tenantId: TENANT,
-    datos: { nombre: 'Sucursal Norte', direccion: 'Av. Norte 123' },
   });
 
-  assert.equal(resultado.status, 201);
-  const sucursal = resultado.body.data.sucursal as SucursalRow;
-  assert.match(sucursal.branch_id!, UUID_V4, 'branch_id debe ser UUID v4');
-  assert.equal(sucursal.fiscal_status, 'pending_mh_data');
-  assert.equal(sucursal.dte_establecimiento_id, ESTABLECIMIENTO);
-  assert.equal(sucursal.sync_error, null);
-
-  assert.equal(llamadas.length, 1);
-  assert.match(llamadas[0].url, /\/internal\/provisioning\/tenants\/[^/]+\/branches$/);
-  assert.equal(llamadas[0].body.branch_id, sucursal.branch_id);
-  assert.ok(!JSON.stringify(llamadas[0].body).includes('password'), 'sin credenciales');
+  assert.equal(resultado.status, 200);
+  assert.deepEqual(db.obtenerTenant(TENANT), { id: TENANT, activo: true }, 'sin datos de empresa: la fila es solo id/activo');
+  assert.deepEqual(
+    db.siembras(),
+    ['sp_sembrar_permisos_tenant', 'sp_sembrar_catalogos_tenant'],
+    'sin la siembra la empresa nueva queda sin permisos ni catálogos'
+  );
 });
 
-test('crearSucursal con DTE caído queda pending_link + sync_error sin romper la creación', async () => {
+test('TENANT_CREADO es idempotente (no duplica el tenant proyectado)', async () => {
   const db = crearDbFake();
-  const { cliente } = crearClienteFake({
-    onPostError: () => ({ status: 503, mensaje: 'El servicio de facturación electrónica no está disponible.' }),
-  });
-  const servicio = crearServicioSucursalesFactory({ db, crearClienteInterno: () => cliente });
+  const servicio = crearServicioEventosProvisionFactory({ db });
 
-  const resultado = await servicio.crearSucursal({
-    tenantId: TENANT,
-    datos: { nombre: 'Sucursal Centro' },
-  });
-
-  assert.equal(resultado.status, 201, 'la creación local no debe fallar');
-  const sucursal = resultado.body.data.sucursal as SucursalRow;
-  assert.equal(sucursal.fiscal_status, 'pending_link');
-  assert.equal(sucursal.dte_establecimiento_id, null);
-  assert.ok(sucursal.sync_error, 'debe registrar el error para el retry');
-});
-
-test('crearSucursal es idempotente: reintentar con el mismo operation_id NO duplica', async () => {
-  const db = crearDbFake();
-  const { cliente, llamadas } = crearClienteFake({
-    onPost: () => ({ establecimiento_id: ESTABLECIMIENTO, fiscal_status: 'pending_mh_data' }),
-  });
-  const servicio = crearServicioSucursalesFactory({ db, crearClienteInterno: () => cliente });
-
-  const primero = await servicio.crearSucursal({
-    tenantId: TENANT,
-    datos: { nombre: 'Sucursal Norte' },
+  await servicio.recibirEvento({
     operationId: OPERATION,
-  });
-
-  const segundo = await servicio.crearSucursal({
+    tipoEvento: 'TENANT_CREADO',
     tenantId: TENANT,
-    datos: { nombre: 'Sucursal Norte' },
-    operationId: OPERATION,
+    payload: { nombre: 'Empresa Uno', nit: '0000-000000-000-0' },
+  });
+  await servicio.recibirEvento({
+    operationId: 'c0000000-0000-4000-8000-000000000002',
+    tipoEvento: 'TENANT_CREADO',
+    tenantId: TENANT,
+    payload: { nombre: 'Empresa Uno renombrada', nit: '0000-000000-000-0' },
   });
 
-  assert.equal(db.conteoSucursales(), 1, 'no debe duplicar la sucursal');
-  assert.equal(db.registrosIdempotencia(), 1);
-  assert.equal(llamadas.length, 1, 'el DTE solo se llama una vez');
-  assert.equal(segundo.status, primero.status);
-  assert.deepEqual(segundo.body, primero.body, 'respuesta cacheada idéntica');
+  assert.equal(db.contarTenants(), 1);
 });
-
-// ═════════════════════════════════════════════
-// vincular (reintento)
-// ═════════════════════════════════════════════
-
-test('vincular reintenta y actualiza la sucursal pendiente', async () => {
-  const db = crearDbFake();
-  db.sembrarSucursal({
-    id: 'suc-1', tenant_id: TENANT, branch_id: BRANCH, dte_establecimiento_id: null,
-    nombre: 'Sucursal Centro', direccion: null, telefono: null, es_principal: false,
-    activo: true, fiscal_status: 'pending_link', sync_error: 'DTE caído',
-  });
-  const { cliente, llamadas } = crearClienteFake({
-    onPost: () => ({ establecimiento_id: ESTABLECIMIENTO, fiscal_status: 'pending_mh_data' }),
-  });
-  const servicio = crearServicioVinculoSucursalFactory({ db, crearClienteInterno: () => cliente });
-
-  const resultado = await servicio.vincular({ tenantId: TENANT, sucursalId: 'suc-1' });
-
-  assert.equal(resultado.duplicado, false);
-  assert.equal(resultado.sucursal.fiscal_status, 'pending_mh_data');
-  assert.equal(resultado.sucursal.dte_establecimiento_id, ESTABLECIMIENTO);
-  assert.equal(resultado.sucursal.sync_error, null);
-  assert.equal(llamadas.length, 1);
-  assert.equal(llamadas[0].body.branch_id, BRANCH, 'reusa el branch_id ya asignado');
-});
-
-test('vincular sobre una sucursal ready es un no-op (no llama al DTE)', async () => {
-  const db = crearDbFake();
-  db.sembrarSucursal({
-    id: 'suc-2', tenant_id: TENANT, branch_id: BRANCH, dte_establecimiento_id: ESTABLECIMIENTO,
-    nombre: 'Sucursal Principal', direccion: null, telefono: null, es_principal: true,
-    activo: true, fiscal_status: 'ready', sync_error: null,
-  });
-  const { cliente, llamadas } = crearClienteFake();
-  const servicio = crearServicioVinculoSucursalFactory({ db, crearClienteInterno: () => cliente });
-
-  const resultado = await servicio.vincular({ tenantId: TENANT, sucursalId: 'suc-2' });
-
-  assert.equal(resultado.duplicado, true);
-  assert.equal(llamadas.length, 0, 'no debe llamar al DTE');
-});
-
-test('vincular valida sucursal: inexistente → 404, sin branch_id → 409, inactiva → 409', async () => {
-  const db = crearDbFake();
-  db.sembrarSucursal({
-    id: 'suc-3', tenant_id: TENANT, branch_id: null, dte_establecimiento_id: null,
-    nombre: 'Sin vínculo', direccion: null, telefono: null, es_principal: false,
-    activo: true, fiscal_status: 'pending_link', sync_error: null,
-  });
-  const { cliente } = crearClienteFake();
-  const servicio = crearServicioVinculoSucursalFactory({ db, crearClienteInterno: () => cliente });
-
-  await assert.rejects(
-    servicio.vincular({ tenantId: TENANT, sucursalId: 'no-existe' }),
-    (err: { status?: number }) => err.status === 404
-  );
-  await assert.rejects(
-    servicio.vincular({ tenantId: TENANT, sucursalId: 'suc-3' }),
-    (err: { status?: number }) => err.status === 409 && String(err.mensaje).includes('branch_id')
-  );
-
-  const inactiva: SucursalRow = {
-    id: 'suc-4', tenant_id: TENANT, branch_id: BRANCH, dte_establecimiento_id: null,
-    nombre: 'Inactiva', direccion: null, telefono: null, es_principal: false,
-    activo: false, fiscal_status: 'inactive', sync_error: null,
-  };
-  db.sembrarSucursal(inactiva);
-  await assert.rejects(
-    servicio.vincular({ tenantId: TENANT, sucursalId: 'suc-4' }),
-    (err: { status?: number }) => err.status === 409 && String(err.mensaje).includes('inactiva')
-  );
-});
-
-// ═════════════════════════════════════════════
-// recibirEvento — BRANCH_VINCULADO (DTE → POS)
-// ═════════════════════════════════════════════
 
 const payloadBranch = {
   branch_id: BRANCH,
@@ -327,9 +138,8 @@ const payloadBranch = {
   tipo_establecimiento: '02',
 };
 
-test('BRANCH_VINCULADO crea la sucursal proyectada cuando el tenant existe', async () => {
+test('BRANCH_VINCULADO se acepta pero NO proyecta sucursales (F5)', async () => {
   const db = crearDbFake();
-  db.sembrarTenant(TENANT);
   const servicio = crearServicioEventosProvisionFactory({ db });
 
   const resultado = await servicio.recibirEvento({
@@ -339,61 +149,12 @@ test('BRANCH_VINCULADO crea la sucursal proyectada cuando el tenant existe', asy
     payload: payloadBranch,
   });
 
-  assert.equal(resultado.status, 200);
-  const sucursal = db.obtenerSucursal(`${TENANT}|${BRANCH}`)!;
-  assert.equal(sucursal.dte_establecimiento_id, ESTABLECIMIENTO);
-  assert.equal(sucursal.fiscal_status, 'ready');
-  assert.equal(sucursal.activo, true);
-  assert.equal(sucursal.sync_error, null);
-  assert.equal(db.conteoSucursales(), 1);
-});
-
-test('BRANCH_VINCULADO actualiza sin duplicar (upsert por tenant+branch)', async () => {
-  const db = crearDbFake();
-  db.sembrarTenant(TENANT);
-  const servicio = crearServicioEventosProvisionFactory({ db });
-
-  await servicio.recibirEvento({
-    operationId: OPERATION,
-    tipoEvento: 'BRANCH_VINCULADO',
-    tenantId: TENANT,
-    payload: payloadBranch,
-  });
-
-  // Nuevo estado desde DTE (mismo branch) → actualiza la misma fila.
-  const resultado = await servicio.recibirEvento({
-    operationId: 'c0000000-0000-4000-8000-000000000002',
-    tipoEvento: 'BRANCH_VINCULADO',
-    tenantId: TENANT,
-    payload: { ...payloadBranch, fiscal_status: 'inactive' },
-  });
-
-  assert.equal(resultado.status, 200);
-  assert.equal(db.conteoSucursales(), 1, 'no debe duplicar');
-  const sucursal = db.obtenerSucursal(`${TENANT}|${BRANCH}`)!;
-  assert.equal(sucursal.fiscal_status, 'inactive');
-  assert.equal(sucursal.activo, false, 'inactive desactiva la sucursal');
-});
-
-test('BRANCH_VINCULADO sin tenant proyectado → 409 (el outbox reintenta)', async () => {
-  const db = crearDbFake();
-  const servicio = crearServicioEventosProvisionFactory({ db });
-
-  await assert.rejects(
-    servicio.recibirEvento({
-      operationId: OPERATION,
-      tipoEvento: 'BRANCH_VINCULADO',
-      tenantId: TENANT,
-      payload: payloadBranch,
-    }),
-    (err: { status?: number }) => err.status === 409
-  );
-  assert.equal(db.conteoSucursales(), 0);
+  assert.equal(resultado.status, 200, 'ack idempotente para el outbox del DTE');
+  assert.deepEqual(db.escriturasProhibidas(), [], 'no escribe en `sucursales`');
 });
 
 test('BRANCH_VINCULADO es idempotente por operation_id', async () => {
   const db = crearDbFake();
-  db.sembrarTenant(TENANT);
   const servicio = crearServicioEventosProvisionFactory({ db });
 
   const primero = await servicio.recibirEvento({
@@ -402,7 +163,6 @@ test('BRANCH_VINCULADO es idempotente por operation_id', async () => {
     tenantId: TENANT,
     payload: payloadBranch,
   });
-
   const repetido = await servicio.recibirEvento({
     operationId: OPERATION,
     tipoEvento: 'BRANCH_VINCULADO',
@@ -410,8 +170,22 @@ test('BRANCH_VINCULADO es idempotente por operation_id', async () => {
     payload: payloadBranch,
   });
 
-  assert.equal(db.conteoSucursales(), 1);
   assert.deepEqual(repetido, primero, 'respuesta cacheada');
+  assert.deepEqual(db.escriturasProhibidas(), []);
+});
+
+test('BRANCH_VINCULADO no exige un tenant proyectado (el POS ya no guarda sucursales)', async () => {
+  const db = crearDbFake();
+  const servicio = crearServicioEventosProvisionFactory({ db });
+
+  const resultado = await servicio.recibirEvento({
+    operationId: OPERATION,
+    tipoEvento: 'BRANCH_VINCULADO',
+    tenantId: OTRO_TENANT,
+    payload: payloadBranch,
+  });
+
+  assert.equal(resultado.status, 200);
 });
 
 test('recibirEventoSchema valida el payload BRANCH (campos obligatorios)', () => {
@@ -439,4 +213,114 @@ test('recibirEventoSchema valida el payload BRANCH (campos obligatorios)', () =>
     payload: { ...payloadBranch, fiscal_status: 'emitir' },
   });
   assert.ok(estadoInvalido, 'fiscal_status solo admite estados conocidos');
+});
+
+// ═════════════════════════════════════════════
+// Resolver de sucursal (X-Sucursal-Id canónico del DTE)
+// ═════════════════════════════════════════════
+
+const crearReqFake = (headers: Record<string, string>, usuario: Record<string, unknown> = {}): Request =>
+  ({
+    headers,
+    ip: '127.0.0.1',
+    usuario: { id: 'u-1', tenant_id: TENANT, sucursal_id: null, ...usuario },
+  }) as unknown as Request;
+
+const ejecutarResolver = async (
+  resolver: ReturnType<typeof crearResolverSucursal>,
+  req: Request
+): Promise<string | undefined> => {
+  let llamoNext = false;
+  await resolver(req, {} as Response, (() => { llamoNext = true; }) as NextFunction);
+  assert.ok(llamoNext, 'siempre llama a next()');
+  return req.sucursalId;
+};
+
+test('acepta X-Sucursal-Id cuando es un establecimiento del tenant', async () => {
+  const resolver = crearResolverSucursal({
+    listarEstablecimientos: async () => [{ id: ESTABLECIMIENTO }],
+  });
+
+  const sucursalId = await ejecutarResolver(
+    resolver,
+    crearReqFake({ 'x-sucursal-id': ESTABLECIMIENTO })
+  );
+
+  assert.equal(sucursalId, ESTABLECIMIENTO);
+});
+
+test('ignora X-Sucursal-Id que no pertenece al tenant y cae al JWT', async () => {
+  const resolver = crearResolverSucursal({
+    listarEstablecimientos: async () => [{ id: ESTABLECIMIENTO }],
+  });
+
+  const sucursalId = await ejecutarResolver(
+    resolver,
+    crearReqFake({ 'x-sucursal-id': 'e0000000-0000-4000-8000-0000000000ff' }, { sucursal_id: ESTABLECIMIENTO })
+  );
+
+  assert.equal(sucursalId, ESTABLECIMIENTO, 'cae al sucursal_id del JWT');
+});
+
+test('con el DTE caído acepta el X-Sucursal-Id canónico (no hay tabla local que validar)', async () => {
+  const resolver = crearResolverSucursal({
+    listarEstablecimientos: async () => {
+      throw new Error('DTE no disponible');
+    },
+  });
+
+  const sucursalId = await ejecutarResolver(
+    resolver,
+    crearReqFake({ 'x-sucursal-id': ESTABLECIMIENTO })
+  );
+
+  assert.equal(sucursalId, ESTABLECIMIENTO);
+});
+
+test('sin header usa el sucursal_id del JWT', async () => {
+  const resolver = crearResolverSucursal({
+    listarEstablecimientos: async () => [{ id: ESTABLECIMIENTO }],
+  });
+
+  const sucursalId = await ejecutarResolver(resolver, crearReqFake({}, { sucursal_id: ESTABLECIMIENTO }));
+  assert.equal(sucursalId, ESTABLECIMIENTO);
+});
+
+// ═════════════════════════════════════════════
+// F5 — establecimiento PREDETERMINADO (cierra el 409 de emisión)
+// ═════════════════════════════════════════════
+
+const PRINCIPAL = 'e0000000-0000-4000-8000-0000000000aa';
+const SECUNDARIA = 'e0000000-0000-4000-8000-0000000000bb';
+
+test('sin header ni sucursal en el JWT usa el establecimiento predeterminado (matriz)', async () => {
+  const resolver = crearResolverSucursal({
+    listarEstablecimientos: async () => [
+      { id: PRINCIPAL, es_principal: true, activo: true, fiscal_status: 'ready' },
+      { id: SECUNDARIA, es_principal: false, activo: true, fiscal_status: 'ready' },
+    ],
+  });
+
+  const sucursalId = await ejecutarResolver(resolver, crearReqFake({}));
+
+  assert.equal(sucursalId, PRINCIPAL, 'una empresa recién creada no queda sin contexto de sucursal');
+});
+
+test('una sucursal del JWT que no es del DTE no bloquea: se usa la predeterminada', async () => {
+  const resolver = crearResolverSucursal({
+    listarEstablecimientos: async () => [{ id: PRINCIPAL, es_principal: true, activo: true, fiscal_status: 'ready' }],
+  });
+
+  const sucursalId = await ejecutarResolver(
+    resolver,
+    crearReqFake({}, { sucursal_id: 'b0000000-0000-4000-8000-000000000001' })
+  );
+
+  assert.equal(sucursalId, PRINCIPAL, 'jamás se propaga un id local retirado: se emite con la canónica');
+});
+
+test('sin establecimientos no inventa sucursal', async () => {
+  const resolver = crearResolverSucursal({ listarEstablecimientos: async () => [] });
+
+  assert.equal(await ejecutarResolver(resolver, crearReqFake({})), undefined);
 });

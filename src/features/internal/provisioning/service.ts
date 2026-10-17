@@ -5,18 +5,22 @@ import { logger } from '../../../shared/utils/logger.js';
 
 /**
  * Factory del receptor de eventos de provisión del DTE Service
- * (Fase 2 + Fase 3). Acepta dependencias inyectables para unit tests (db
- * fake). El módulo exporta una instancia por defecto (uso normal) y la
- * factory (tests).
+ * (Fase 2 + Fase 3 + F5).
+ * Acepta dependencias inyectables para unit tests (db fake). El módulo exporta
+ * una instancia por defecto (uso normal) y la factory (tests).
  *
- * El DTE Service es la fuente de verdad fiscal; el POS crea/actualiza su
- * proyección operativa con los MISMO identificadores (tenant_id / branch_id).
+ * El DTE Service es la fuente de verdad de EMPRESA y SUCURSAL; el POS solo
+ * mantiene un espejo MÍNIMO de identidad técnica del tenant (`id`, `activo`).
  *
- * ALCANCE (F2, 2026-10-16): este receptor es SOLO proyección/espejo de lo que
- * publica el DTE. No es una vía de escritura de campos editables: el POS ya no
- * expone edición de empresa (PUT /restaurante) ni de sucursal (POST/PATCH
- * /sucursales). Las columnas de empresa de `tenants`/`sucursales` se retiran en
- * F5; hasta entonces se mantienen como caché de lectura.
+ * ALCANCE (F5, 2026-10-16): el POS ya NO guarda nada de empresa/sucursal.
+ * - `TENANT_CREADO` proyecta la fila mínima del tenant (para el gate de cuenta
+ *   activa y las FK operativas por `tenant_id`) y siembra el onboarding
+ *   operativo (permisos + catálogos).
+ * - `BRANCH_VINCULADO` queda como evento ACEPTADO e IDEMPOTENTE pero sin
+ *   proyección: la tabla `sucursales` se retiró (migración 081) y las lecturas
+ *   de establecimiento salen del DTE.
+ * - `USUARIO_INICIAL` sigue creando el administrador del POS.
+ *
  * Idempotente:
  * - idempotency_keys (operation_id) → respuesta cacheada.
  * - INSERT con ON CONFLICT → nunca duplica filas.
@@ -85,18 +89,14 @@ const crearServicioEventosProvision = (dependencias: { db?: { query: typeof quer
     }
 
     if (tipoEvento === 'TENANT_CREADO') {
-      const p = payload as PayloadTenant;
+      // F5 — espejo MÍNIMO: el POS ya no guarda identidad de empresa (nombre,
+      // NIT, NRC, email). Solo proyecta la existencia técnica del tenant para
+      // el gate de cuenta activa y las FK operativas por `tenant_id`.
       await db.query(
-        `INSERT INTO tenants (id, nombre, nombre_comercial, nit, nrc, email, activo, fiscal_sync_status, last_fiscal_sync_at)
-         VALUES ($1, $2, $3, $4, $5, $6, TRUE, 'pending_fiscal_setup', NOW())
-         ON CONFLICT (id) DO UPDATE SET
-           nombre = EXCLUDED.nombre,
-           nombre_comercial = COALESCE(EXCLUDED.nombre_comercial, tenants.nombre_comercial, EXCLUDED.nombre),
-           nit = EXCLUDED.nit,
-           nrc = COALESCE(EXCLUDED.nrc, tenants.nrc),
-           email = COALESCE(EXCLUDED.email, tenants.email),
-           last_fiscal_sync_at = NOW()`,
-        [tenantId, p.nombre, p.nombre_comercial || p.nombre, p.nit, p.nrc || null, p.email || null]
+        `INSERT INTO tenants (id, activo)
+         VALUES ($1, TRUE)
+         ON CONFLICT (id) DO NOTHING`,
+        [tenantId]
       );
 
       // Onboarding operativo del tenant: permisos por rol (matriz completa del
@@ -106,46 +106,11 @@ const crearServicioEventosProvision = (dependencias: { db?: { query: typeof quer
     }
 
     if (tipoEvento === 'BRANCH_VINCULADO') {
+      // F5 — el POS ya no proyecta sucursales: el DTE es la única fuente de
+      // verdad y las lecturas de establecimiento salen de su API. El evento se
+      // acepta (ack idempotente para el outbox del DTE) sin escribir nada.
       const p = payload as PayloadBranch;
-
-      // La proyección del tenant debe existir (el evento TENANT_CREADO se
-      // entrega antes por el outbox). Si falta, responder error para que el
-      // outbox reintente el evento más tarde.
-      const { rows: tenants } = await db.query('SELECT id FROM tenants WHERE id = $1', [tenantId]);
-      if (tenants.length === 0) {
-        logger.warn('BRANCH_VINCULADO rechazado: tenant no proyectado', { operationId, tenantId });
-        throw { status: 409, mensaje: 'Tenant no proyectado en POS. Procesar TENANT_CREADO primero.' };
-      }
-
-      const activo = p.fiscal_status !== 'inactive';
-
-      await db.query(
-        `INSERT INTO sucursales
-           (tenant_id, branch_id, dte_establecimiento_id, nombre, direccion, telefono,
-            fiscal_status, activo, last_fiscal_sync_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-         ON CONFLICT (tenant_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET
-           dte_establecimiento_id = EXCLUDED.dte_establecimiento_id,
-           nombre = EXCLUDED.nombre,
-           direccion = COALESCE(EXCLUDED.direccion, sucursales.direccion),
-           telefono = COALESCE(EXCLUDED.telefono, sucursales.telefono),
-           fiscal_status = EXCLUDED.fiscal_status,
-           sync_error = NULL,
-           activo = EXCLUDED.activo,
-           last_fiscal_sync_at = NOW()`,
-        [
-          tenantId,
-          p.branch_id,
-          p.establecimiento_id,
-          p.nombre,
-          p.direccion || null,
-          p.telefono || null,
-          p.fiscal_status,
-          activo,
-        ]
-      );
-
-      logger.info('Sucursal sincronizada desde DTE', {
+      logger.info('BRANCH_VINCULADO aceptado sin proyección: el POS ya no guarda sucursales (DTE es la fuente)', {
         operationId,
         tenantId,
         branch_id: p.branch_id,
@@ -210,7 +175,7 @@ const crearServicioEventosProvision = (dependencias: { db?: { query: typeof quer
 
     await db.query(
       `UPDATE tenants
-          SET dte_api_key_enc = $1, dte_api_key = NULL, actualizado_en = NOW()
+          SET dte_api_key_enc = $1, actualizado_en = NOW()
         WHERE id = $2`,
       [cifrado, tenantId]
     );

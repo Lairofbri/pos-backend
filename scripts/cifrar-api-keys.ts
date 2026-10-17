@@ -4,6 +4,10 @@
 //
 // Uso: pnpm cifrar:api-keys
 //
+// F5 (migración 081): la columna `dte_api_key` (texto plano) YA NO EXISTE; el
+// script queda como no-op y solo informa. Si se ejecuta contra una BD previa a
+// 081, sigue cifrando lo pendiente (pre-flight obligatorio antes de la 081).
+//
 // Solo procesa filas con dte_api_key no nulo y dte_api_key_enc nulo. Si se
 // interrumpe a mitad de camino, volver a ejecutar continúa donde quedó.
 
@@ -15,6 +19,15 @@ import { logger } from '../src/shared/utils/logger.js';
 const run = async () => {
   const client = await pool.connect();
   try {
+    const { rows: columna } = await client.query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'dte_api_key'`
+    );
+    if (columna.length === 0) {
+      logger.info('Nada por cifrar: `tenants.dte_api_key` ya no existe (F5, migración 081).');
+      return;
+    }
+
     const { rows } = await client.query(
       `SELECT id, dte_api_key
        FROM tenants

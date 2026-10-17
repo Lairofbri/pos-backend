@@ -2,9 +2,12 @@
 // Crea los datos estructurales iniciales:
 //   - Usuario administrador con email y PIN
 //   - Permisos default por rol para el tenant
-//   - Menús del sidebar
 //   - Catálogos (unidades de medida, tipos de pago, etc.)
 //   - Usuarios extra por rol (mesero, cajero, cocinero, gerente)
+//
+// F5 (migración 081): el POS ya NO guarda datos de empresa ni tabla
+// `sucursales`. `usuarios.sucursal_id` es el `establecimiento_id` canónico del
+// DTE (para el tenant demo, el mismo que fija la migración 075).
 //
 // Uso: node src/migrations/seed.js
 // SOLO ejecutar una vez al inicio. Es idempotente (no duplica si ya existe).
@@ -16,7 +19,8 @@ const { env } = require('../shared/config/env.js');
 const { logger } = require('../shared/utils/logger.js');
 
 const TENANT_ID    = 'a0000000-0000-4000-8000-000000000001';
-const SUCURSAL_ID  = 'b0000000-0000-4000-8000-000000000001';
+// Establecimiento canónico del DTE para el tenant demo (ver migración 075).
+const ESTABLECIMIENTO_PRINCIPAL_DEMO = '4862838d-2109-43cc-ba80-ab46165f87f1';
 const ADMIN_EMAIL  = 'admin@demo.pos';
 const ADMIN_PIN    = '123456';        // PIN rápido para estación
 const ADMIN_PASS   = 'Admin123!';    // Password para panel web
@@ -121,13 +125,12 @@ const ejecutarSeed = async () => {
   // 4. Sembrar permisos default para los 5 roles del tenant demo (siempre, idempotente)
   await sembrarPermisosTenant(TENANT_ID);
 
-  // 5. Menús del sidebar: catálogo GLOBAL (migración 080) — no se siembran por tenant.
-
-  // 6. Sembrar catálogos default (siempre, idempotente)
+  // 5. Menús del sidebar: catálogo GLOBAL (migración 080) — no se siembran por
+  //    tenant. Catálogos operativos: por tenant (idempotente).
   await query('CALL sp_sembrar_catalogos_tenant($1)', [TENANT_ID]);
 
-  // 7. Sembrar usuarios extra (meseros, cajero, cocina, gerente)
-  await sembrarUsuariosExtra(TENANT_ID, SUCURSAL_ID);
+  // 6. Sembrar usuarios extra (meseros, cajero, cocina, gerente)
+  await sembrarUsuariosExtra(TENANT_ID, ESTABLECIMIENTO_PRINCIPAL_DEMO);
 
   logger.info('Seed completado exitosamente.');
   logger.info('─────────────────────────────────────');

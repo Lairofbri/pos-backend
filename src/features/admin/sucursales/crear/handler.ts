@@ -9,9 +9,9 @@ import { MENSAJE_SUCURSAL_ALTA_SOLO_DTE } from '../../../../shared/empresa.js';
  * El alta de sucursales (establecimientos) se administra en el DTE Service: el
  * DTE genera el `branch_id` y los códigos MH. El POS ya no crea sucursales.
  *
- * La ruta se conserva para responder con un error explícito y auditar el
- * intento. Rollback (§6 del spec): volver a delegar en
- * `servicioSucursales.crearSucursal` (el servicio sigue disponible).
+ * F5 (2026-10-16): la tabla local `sucursales` y su servicio de alta se
+ * retiraron; esta ruta queda SOLO como error explícito (+ auditoría). Rollback:
+ * recrear la tabla (ver bloque de rollback de la migración 081).
  */
 export const handler = async (req: Request, res: Response) => {
   registrarIntentoEscrituraBloqueado({

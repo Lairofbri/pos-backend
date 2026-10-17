@@ -26,6 +26,13 @@ DO $$
 DECLARE
   restriccion RECORD;
 BEGIN
+  -- F5 (migración 081) retira la tabla `sucursales`; re-ejecutar esta migración
+  -- después de F5 no debe fallar (idempotencia entre entornos/estados).
+  IF to_regclass('public.sucursales') IS NULL THEN
+    RAISE NOTICE 'F3: `sucursales` no existe (retirada en F5) — nada que desligar.';
+    RETURN;
+  END IF;
+
   FOR restriccion IN
     SELECT c.conrelid::regclass::text AS tabla, c.conname
     FROM pg_constraint c

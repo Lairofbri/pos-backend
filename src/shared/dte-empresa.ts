@@ -27,6 +27,50 @@ import { logger } from './utils/logger.js';
 export type ClienteDteGet = { get: (url: string) => Promise<unknown> };
 export type FabricaClienteDte = (baseURL: string) => ClienteDteGet;
 
+/** Campos mínimos para elegir el establecimiento predeterminado de un tenant. */
+export type EstablecimientoElegible = {
+  id: string;
+  es_principal?: boolean;
+  activo?: boolean;
+  fiscal_status?: string;
+};
+
+/**
+ * F5 — establecimiento PREDETERMINADO del tenant.
+ *
+ * El POS necesita un contexto de sucursal canónico incluso cuando el usuario no
+ * tiene una asignada (los administradores del onboarding nacen con
+ * `sucursal_id = NULL`) o cuando la orden histórica quedó sin sucursal. La
+ * elección es determinista y siempre sale del DTE:
+ *
+ * 1. la matriz (`es_principal`) con vínculo fiscal `ready` y activa;
+ * 2. cualquier establecimiento `ready` y activo;
+ * 3. la matriz activa;
+ * 4. cualquier activo;
+ * 5. la matriz; 6. el primero.
+ *
+ * Devuelve `null` si el tenant no tiene establecimientos.
+ */
+export const elegirEstablecimientoPredeterminado = <T extends EstablecimientoElegible>(
+  establecimientos: T[]
+): T | null => {
+  if (!Array.isArray(establecimientos) || establecimientos.length === 0) return null;
+
+  const activo = (e: T) => !!e.activo;
+  const principal = (e: T) => !!e.es_principal;
+  const listo = (e: T) => e.fiscal_status === 'ready';
+
+  return (
+    establecimientos.find((e) => principal(e) && activo(e) && listo(e)) ??
+    establecimientos.find((e) => activo(e) && listo(e)) ??
+    establecimientos.find((e) => principal(e) && activo(e)) ??
+    establecimientos.find(activo) ??
+    establecimientos.find(principal) ??
+    establecimientos[0] ??
+    null
+  );
+};
+
 export type TenantEmpresaDte = {
   id: string;
   nombre: string;
@@ -276,6 +320,30 @@ export const crearServicioEmpresaDte = (
     };
   };
 
+  /**
+   * F5 — establecimiento PREDETERMINADO del tenant resuelto contra el DTE.
+   *
+   * Garantiza un contexto de sucursal canónico para el POS cuando el usuario no
+   * tiene una asignada (`sucursal_id = NULL`, caso de los administradores del
+   * onboarding) o cuando la operación histórica quedó sin sucursal. Nunca
+   * inventa ids: si el tenant no tiene establecimientos devuelve `null`.
+   */
+  const resolverEstablecimientoFiscalPredeterminado = async (
+    tenantId: string
+  ): Promise<ContextoFiscalEstablecimiento | null> => {
+    const empresa = await obtenerEmpresa(tenantId);
+    const est = elegirEstablecimientoPredeterminado(listarEstablecimientosCrudo(empresa));
+    if (!est) return null;
+    return {
+      id: est.id,
+      branch_id: est.branch_id ?? null,
+      dte_establecimiento_id: est.id,
+      fiscal_status: est.fiscal_status,
+      activo: !!est.activo,
+      nombre: est.nombre,
+    };
+  };
+
   /** Empresas + sucursales para el login (`GET /api/v1/empresas`), sin CORS. */
   const listarEmpresasParaLogin = async (): Promise<{
     tenants: Array<{
@@ -367,6 +435,7 @@ export const crearServicioEmpresaDte = (
     listarEstablecimientos,
     obtenerEstablecimiento,
     resolverEstablecimientoFiscal,
+    resolverEstablecimientoFiscalPredeterminado,
     listarEmpresasParaLogin,
     obtenerDatosEmisor,
     mapaNombresEstablecimiento,

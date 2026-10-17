@@ -46,7 +46,7 @@ const run = async () => {
   const client = await pool.connect();
   try {
     const { rows } = await client.query(
-      'SELECT id, nombre, (dte_api_key_enc IS NOT NULL) AS tenia_clave FROM tenants WHERE id = $1',
+      'SELECT id, (dte_api_key_enc IS NOT NULL) AS tenia_clave FROM tenants WHERE id = $1',
       [tenantId]
     );
     if (rows.length === 0) {
@@ -65,15 +65,14 @@ const run = async () => {
 
     await client.query(
       `UPDATE tenants
-          SET dte_api_key_enc = $1, dte_api_key = NULL, actualizado_en = NOW()
+          SET dte_api_key_enc = $1, actualizado_en = NOW()
         WHERE id = $2`,
       [cifrado, tenantId]
     );
 
-    const fila = rows[0] as { nombre: string; tenia_clave: boolean };
+    const fila = rows[0] as { tenia_clave: boolean };
     logger.info('API Key de integración instalada (cifrada)', {
       tenant_id: tenantId,
-      empresa: fila.nombre,
       reemplazo: fila.tenia_clave,
     });
   } catch (err) {

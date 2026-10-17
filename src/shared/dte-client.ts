@@ -90,29 +90,29 @@ const configurarInterceptores = (cliente: ReturnType<typeof axios.create>, baseU
 };
 
 type TenantDteConfig = {
-  dte_service_url: string | null;
-  dte_api_key: string | null;
   dte_api_key_enc: string | null;
 };
 
 export const obtenerClientePorTenant = async (tenantId: string) => {
+  // F5 (spec «DTE única fuente de verdad», 2026-10-16): `tenants` ya no guarda
+  // datos de empresa. De esta fila solo sobrevive la credencial técnica del
+  // POS hacia el DTE (cifrada) y `DTE_SERVICE_URL` resuelve la URL del DTE.
   const { rows } = await query(
-    'SELECT dte_service_url, dte_api_key, dte_api_key_enc FROM tenants WHERE id = $1',
+    'SELECT dte_api_key_enc FROM tenants WHERE id = $1',
     [tenantId]
   );
 
   const tenant = rows[0] as TenantDteConfig | undefined;
-  const baseURL = tenant?.dte_service_url || env.DTE_SERVICE_URL;
+  const baseURL = env.DTE_SERVICE_URL;
 
   // Fase 2 — Aislamiento multi-tenant:
   // En producción NO existe fallback global de API Key. Cada tenant debe
   // tener su propia clave para operar el DTE Service. En desarrollo se
   // permite la clave global para facilitar el flujo local.
   //
-  // Fase 1 — Almacenamiento seguro: la API Key se persiste cifrada en
-  // tenants.dte_api_key_enc (AES-256-GCM). Se descifra solo en runtime.
-  // El texto plano en dte_api_key es legado de transición: en producción se
-  // rechaza para forzar la migración (scripts/cifrar-api-keys.ts).
+  // Decisión §7.4: la API Key se persiste SOLO cifrada en
+  // `tenants.dte_api_key_enc` (AES-256-GCM) y se descifra en runtime. El
+  // texto plano (`dte_api_key`) se eliminó en la migración 081.
   let apiKey: string | null = null;
   if (tenant?.dte_api_key_enc) {
     try {
@@ -124,13 +124,6 @@ export const obtenerClientePorTenant = async (tenantId: string) => {
       });
       throw { status: 500, mensaje: 'Error de configuración de la API Key de facturación.' };
     }
-  } else if (tenant?.dte_api_key) {
-    if (env.ES_PRODUCCION) {
-      logger.error('Tenant con API Key DTE sin cifrar en producción', { tenantId });
-      throw { status: 500, mensaje: 'API Key de facturación no migrada a cifrado seguro.' };
-    }
-    logger.warn('Tenant con API Key DTE en texto plano (legado) — ejecuta cifrar:api-keys', { tenantId });
-    apiKey = tenant.dte_api_key;
   }
 
   if (!apiKey) {

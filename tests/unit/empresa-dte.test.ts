@@ -15,6 +15,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   crearServicioEmpresaDteFactory,
+  elegirEstablecimientoPredeterminado,
   type ClienteDteGet,
   type EmpresaDte,
 } from '../../src/shared/dte-empresa.js';
@@ -294,4 +295,57 @@ test('mapaNombresEstablecimiento indexa por id y por branch_id', async () => {
   assert.equal(mapa.get(EST_B), 'Sucursal Centro');
   assert.equal(mapa.get(BRANCH_B), 'Sucursal Centro');
   assert.equal(mapa.get('desconocido'), undefined);
+});
+
+// ═════════════════════════════════════════════
+// F5 — establecimiento PREDETERMINADO del tenant
+// ═════════════════════════════════════════════
+
+test('elegirEstablecimientoPredeterminado prefiere la matriz lista y activa', () => {
+  const elegido = elegirEstablecimientoPredeterminado([
+    { id: EST_B, es_principal: false, activo: true, fiscal_status: 'ready' },
+    { id: EST_A, es_principal: true, activo: true, fiscal_status: 'ready' },
+  ]);
+
+  assert.equal(elegido?.id, EST_A);
+});
+
+test('elegirEstablecimientoPredeterminado salta la matriz no lista y toma un establecimiento ready', () => {
+  const elegido = elegirEstablecimientoPredeterminado([
+    { id: EST_A, es_principal: true, activo: true, fiscal_status: 'pending_mh_data' },
+    { id: EST_B, es_principal: false, activo: true, fiscal_status: 'ready' },
+  ]);
+
+  assert.equal(elegido?.id, EST_B, 'un establecimiento con vínculo fiscal listo puede emitir');
+});
+
+test('elegirEstablecimientoPredeterminado nunca devuelve un establecimiento inactivo si hay activos', () => {
+  const elegido = elegirEstablecimientoPredeterminado([
+    { id: EST_A, es_principal: true, activo: false, fiscal_status: 'ready' },
+    { id: EST_B, es_principal: false, activo: true, fiscal_status: 'ready' },
+  ]);
+
+  assert.equal(elegido?.id, EST_B);
+});
+
+test('elegirEstablecimientoPredeterminado devuelve null sin establecimientos', () => {
+  assert.equal(elegirEstablecimientoPredeterminado([]), null);
+});
+
+test('resolverEstablecimientoFiscalPredeterminado devuelve la matriz del DTE', async () => {
+  const servicio = crearServicioEmpresaDteFactory(crearClientesFake());
+
+  const predeterminado = await servicio.resolverEstablecimientoFiscalPredeterminado(TENANT);
+
+  assert.equal(predeterminado?.dte_establecimiento_id, EST_A);
+  assert.equal(predeterminado?.branch_id, BRANCH_A);
+  assert.equal(predeterminado?.fiscal_status, 'ready');
+  assert.equal(predeterminado?.activo, true);
+});
+
+test('resolverEstablecimientoFiscalPredeterminado devuelve null si la empresa no tiene establecimientos', async () => {
+  const clientes = crearClientesFake({ empresa: () => ({ ...empresaEjemplo, establecimientos: [] }) });
+  const servicio = crearServicioEmpresaDteFactory(clientes);
+
+  assert.equal(await servicio.resolverEstablecimientoFiscalPredeterminado(TENANT), null);
 });

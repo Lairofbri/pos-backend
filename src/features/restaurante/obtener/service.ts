@@ -17,7 +17,9 @@ export const obtenerRestaurante = async ({ tenantId }: { tenantId: string }) => 
   const configuracion = empresa.configuracion ?? null;
 
   // Único dato de `tenants` que sigue siendo del POS: la preferencia operativa.
-  const { rows } = await query('SELECT pos_default_mode, (dte_api_key_enc IS NOT NULL OR dte_api_key IS NOT NULL) AS dte_api_key_configurada FROM tenants WHERE id = $1', [tenantId]);
+  // F5: `tenants` ya no guarda datos de empresa; la API Key de integración vive
+  // solo cifrada (`dte_api_key_enc`).
+  const { rows } = await query('SELECT pos_default_mode, (dte_api_key_enc IS NOT NULL) AS dte_api_key_configurada FROM tenants WHERE id = $1', [tenantId]);
 
   return {
     id: empresa.tenant?.id ?? tenantId,

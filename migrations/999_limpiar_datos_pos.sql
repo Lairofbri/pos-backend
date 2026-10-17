@@ -1,7 +1,7 @@
 -- =============================================
 -- Script: Limpiar datos transaccionales del POS
 -- Deja intactas las tablas de configuración:
---   tenants, sucursales, usuarios, refresh_tokens,
+--   tenants, usuarios, refresh_tokens,
 --   permisos, rol_permisos, menus
 -- =============================================
 -- Ejecutar con:
@@ -46,7 +46,7 @@ DELETE FROM cajas;
 -- 10. Clientes
 DELETE FROM clientes;
 
--- 11. Mesas (FK a sucursales)
+-- 11. Mesas (sucursal_id = establecimiento_id canónico del DTE; sin FK local desde F5)
 DELETE FROM mesas;
 
 COMMIT;
