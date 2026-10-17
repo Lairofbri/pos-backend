@@ -1,12 +1,13 @@
 import type { Request, Response } from 'express';
-import { ThermalPrinter as Printer, PrinterTypes, CharacterSet } from 'node-thermal-printer';
-import net from 'net';
 import { query } from '../../../shared/config/database.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { exito, error, errorServidor } from '../../../shared/utils/response.js';
 import { obtenerClientePorTenant } from '../../../shared/dte-client.js';
+import { validarUuidQuery } from '../../../shared/middlewares/uuid.middleware.js';
 import { obtener } from '../impresoras/service.js';
-import { formatoPreCuenta, formatoTicketConsumo, formatoFactura } from './formats.js';
+import { formatoPreCuenta, formatoTicketConsumo, formatoCocina, formatoFactura, resolverAncho, ANCHO_POR_DEFECTO } from './formats.js';
+import { renderEscpos } from './escpos.js';
+import { enviarBytesTcp } from './tcp.js';
 
 const manejarError = (res: Response, err: unknown) => {
   const e = err as { status?: number; mensaje?: string };
@@ -18,6 +19,7 @@ const manejarError = (res: Response, err: unknown) => {
 const TIPOS_FORMATOS: Record<string, { formato: typeof formatoPreCuenta; printerTipo: string }> = {
   'pre-cuenta': { formato: formatoPreCuenta, printerTipo: 'pre-cuenta' },
   'ticket-consumo': { formato: formatoTicketConsumo, printerTipo: 'ticket-consumo' },
+  cocina: { formato: formatoCocina, printerTipo: 'cocina' },
   factura: { formato: formatoFactura, printerTipo: 'ticket-consumo' },
 };
 
@@ -70,7 +72,7 @@ const obtenerDteFiscal = async (tenantId: string, codigoGeneracion: string | nul
   }
 
   const { rows } = await query(
-    `SELECT tipo_dte, codigo_generacion, numero_control, estado, sello_recepcion
+    `SELECT tipo_dte, codigo_generacion, numero_control, estado
      FROM dtes_orden
      WHERE tenant_id = $1 AND codigo_generacion = $2
      ORDER BY creado_en DESC
@@ -91,100 +93,58 @@ const obtenerDteFiscal = async (tenantId: string, codigoGeneracion: string | nul
   return { ...referencia, ...dte };
 };
 
-const imprimirEnRed = async ({ ip, puerto, texto, papelMm = 80, qrUrl }: {
+/** Primer impresora activa del tipo pedido (o la indicada por id). */
+const buscarImpresora = async (tenantId: string, printerTipo: string, impresoraId?: string) => {
+  if (impresoraId) return await obtener(tenantId, impresoraId) as Record<string, unknown>;
+
+  const { rows } = await query(
+    `SELECT * FROM impresoras
+     WHERE tenant_id = $1 AND tipo = $2 AND activo = true
+     ORDER BY creado_en ASC LIMIT 1`,
+    [tenantId, printerTipo]
+  );
+  return (rows[0] as Record<string, unknown>) ?? null;
+};
+
+/** Renderiza el ticket y lo envía por TCP a una impresora de red. */
+const imprimirEnRed = async ({ ip, puerto, texto, qrUrl }: {
   ip: string;
   puerto: number;
   texto: string;
-  papelMm?: number;
   qrUrl?: string | null;
 }) => {
-  return new Promise<void>((resolve, reject) => {
-    const socket = new net.Socket();
-
-    const timeout = setTimeout(() => {
-      socket.destroy();
-      reject(new Error(`Timeout conectando a ${ip}:${puerto}`));
-    }, 5000);
-
-    socket.connect(puerto, ip, () => {
-      clearTimeout(timeout);
-      try {
-        const printer = new Printer({
-          type: PrinterTypes.EPSON,
-          interface: `tcp://${ip}:${puerto}`,
-          width: papelMm === 58 ? 32 : 42,
-          characterSet: CharacterSet.PC852_LATIN2,
-          removeSpecialCharacters: false,
-        });
-
-        printer.alignCenter();
-        printer.println(' ');
-        printer.println(texto);
-        if (qrUrl) {
-          printer.println(' ');
-          printer.printQR(qrUrl, { model: 2, cellSize: 5, correction: 'M' });
-          printer.println(' ');
-        }
-        printer.println(' ');
-        printer.cut();
-
-        const buffer = printer.getBuffer();
-        socket.write(buffer, (err) => {
-          if (err) { socket.destroy(); reject(err); }
-          else { socket.destroy(); resolve(); }
-        });
-      } catch (err) {
-        socket.destroy();
-        reject(err);
-      }
-    });
-
-    socket.on('error', (err) => {
-      clearTimeout(timeout);
-      reject(err);
-    });
-  });
+  const bytes = renderEscpos({ texto, qrUrl });
+  await enviarBytesTcp({ ip, puerto, bytes });
 };
 
 export const imprimir = async (req: Request, res: Response) => {
   const { tipo, impresora_id } = req.body as { tipo?: string; impresora_id?: string };
-  if (!tipo || !['pre-cuenta', 'ticket-consumo', 'factura'].includes(tipo)) {
-    return error(res, 'Tipo de ticket requerido: pre-cuenta, ticket-consumo o factura.', 400);
+  if (!tipo || !['pre-cuenta', 'ticket-consumo', 'cocina', 'factura'].includes(tipo)) {
+    return error(res, 'Tipo de ticket requerido: pre-cuenta, ticket-consumo, cocina o factura.', 400);
   }
 
   try {
     const config = TIPOS_FORMATOS[tipo];
     if (!config) throw { status: 400, mensaje: `Tipo de ticket invalido: ${tipo}` };
 
-    let impresora: Record<string, unknown>;
-    if (impresora_id) {
-      impresora = await obtener(req.usuario!.tenant_id, impresora_id);
-    } else {
-      const { rows } = await query(
-        `SELECT * FROM impresoras
-         WHERE tenant_id = $1 AND tipo = $2 AND activo = true
-         ORDER BY creado_en ASC LIMIT 1`,
-        [req.usuario!.tenant_id, config.printerTipo]
-      );
-      if (rows.length === 0) {
-        throw { status: 404, mensaje: `No hay impresora activa configurada para "${tipo}". Configurala en Admin > Impresoras.` };
-      }
-      impresora = rows[0] as Record<string, unknown>;
+    const impresora = await buscarImpresora(req.usuario!.tenant_id, config.printerTipo, impresora_id);
+    if (!impresora) {
+      throw { status: 404, mensaje: `No hay impresora activa configurada para "${tipo}". Configurala en Admin > Impresoras.` };
     }
 
+    const ancho = resolverAncho(impresora.papel_mm as number, impresora.caracteres_x_linea as number);
     const { orden, items, pagos, tenant } = await obtenerDatosOrden(req.usuario!.tenant_id, req.params.ordenId as string);
     const dte = tipo === 'factura'
       ? await obtenerDteFiscal(req.usuario!.tenant_id, (orden.dte_codigo_generacion as string) || null)
       : null;
 
-    const texto = config.formato({ orden, tenant, items, pagos, dte });
+    const texto = config.formato({ orden, tenant, items, pagos, dte, ancho });
 
     try {
       await imprimirEnRed({
         ip: impresora.ip as string,
         puerto: impresora.puerto as number,
         texto,
-        papelMm: impresora.papel_mm as number,
         qrUrl: dte?.qr_url as string | null | undefined,
       });
 
@@ -204,10 +164,16 @@ export const imprimirPrueba = async (req: Request, res: Response) => {
   try {
     const impresora = await obtener(req.usuario!.tenant_id, impresora_id);
 
+    const ancho = resolverAncho(impresora.papel_mm as number, impresora.caracteres_x_linea as number);
+    const caja = (texto: string) => {
+      const relleno = Math.max(0, ancho - 8 - texto.length);
+      return `${' '.repeat(6)}║${texto}${' '.repeat(relleno)}║`;
+    };
+
     const texto = [
-      '', '      ╔══════════════════════╗',
-      '      ║   PRUEBA DE IMPRESION ║',
-      '      ╚══════════════════════╝', '',
+      '', `      ╔${'═'.repeat(Math.max(4, ancho - 8))}╗`,
+      caja('   PRUEBA DE IMPRESION'),
+      `      ╚${'═'.repeat(Math.max(4, ancho - 8))}╝`, '',
       '  Si ves este texto, la',
       '  impresora termica funciona',
       '  correctamente.', '',
@@ -215,11 +181,64 @@ export const imprimirPrueba = async (req: Request, res: Response) => {
       `  IP: ${impresora.ip as string}:${impresora.puerto as number}`,
       `  Fecha: ${new Date().toLocaleString('es-SV')}`, '',
       '  Gracias por usar AMBER POS!', '',
-      '─'.repeat(42), '',
+      '─'.repeat(ancho), '',
     ].join('\n');
 
-    await imprimirEnRed({ ip: impresora.ip as string, puerto: impresora.puerto as number, texto, papelMm: impresora.papel_mm as number });
+    await imprimirEnRed({ ip: impresora.ip as string, puerto: impresora.puerto as number, texto });
     return exito(res, { impreso: true, mensaje: 'Prueba de impresion exitosa' });
+  } catch (err) {
+    return manejarError(res, err);
+  }
+};
+
+const TIPOS_ESC_POS = ['pre-cuenta', 'ticket-consumo', 'cocina', 'factura'] as const;
+type TipoEscPos = typeof TIPOS_ESC_POS[number];
+
+/**
+ * GET /impresion/ticket-escpos/:ordenId?tipo=...&impresora_id=...
+ *
+ * Devuelve los bytes ESC/POS listos para escribir, para que el agente local
+ * los envíe a la impresora (decisión D3: el backend es la fuente de verdad).
+ * No toca el cobro, la venta ni el DTE: solo lee lo ya persistido.
+ * Si no hay impresora configurada NO falla: usa el ancho por defecto (80 mm).
+ */
+export const ticketEscpos = async (req: Request, res: Response) => {
+  const tipo = String(req.query.tipo ?? 'pre-cuenta') as TipoEscPos;
+  if (!TIPOS_ESC_POS.includes(tipo)) {
+    return error(res, `Tipo de ticket invalido: ${tipo}. Validos: ${TIPOS_ESC_POS.join(', ')}.`, 400);
+  }
+
+  const impresoraId = typeof req.query.impresora_id === 'string' ? req.query.impresora_id : undefined;
+  if (!validarUuidQuery(res, impresoraId, 'impresora_id')) return;
+
+  try {
+    const config = TIPOS_FORMATOS[tipo];
+
+    // La impresora es opcional: de ella solo se hereda el ancho de papel.
+    const impresora = await buscarImpresora(req.usuario!.tenant_id, config.printerTipo, impresoraId);
+    const ancho = impresora
+      ? resolverAncho(impresora.papel_mm as number, impresora.caracteres_x_linea as number)
+      : ANCHO_POR_DEFECTO;
+
+    const { orden, items, pagos, tenant } = await obtenerDatosOrden(req.usuario!.tenant_id, req.params.ordenId as string);
+    const dte = tipo === 'factura'
+      ? await obtenerDteFiscal(req.usuario!.tenant_id, (orden.dte_codigo_generacion as string) || null)
+      : null;
+
+    const texto = config.formato({ orden, tenant, items, pagos, dte, ancho });
+    const bytes = renderEscpos({ texto, qrUrl: dte?.qr_url as string | null | undefined });
+
+    logger.info('Ticket ESC/POS generado', {
+      tenant_id: req.usuario!.tenant_id,
+      orden_id: req.params.ordenId,
+      tipo,
+      bytes: bytes.length,
+    });
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'inline; filename="ticket-escpos.bin"');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(bytes);
   } catch (err) {
     return manejarError(res, err);
   }
