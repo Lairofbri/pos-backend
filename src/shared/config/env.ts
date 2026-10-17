@@ -52,6 +52,12 @@ export const env = {
   DTE_API_KEY: process.env.DTE_API_KEY ?? '',
   DTE_TIMEOUT: opcionalInt('DTE_TIMEOUT', 10000),
 
+  // F3 (spec «DTE única fuente de verdad»): TTL de la caché en memoria de la
+  // ficha de empresa/sucursales que el POS lee del DTE. Evita consultar en
+  // cada request y da una ventana de degradación si el DTE se cae (se sirve
+  // la última copia buena). 0 desactiva la caché.
+  EMPRESA_DTE_CACHE_TTL_MS: opcionalInt('EMPRESA_DTE_CACHE_TTL_MS', 30000),
+
   // Provisión interna POS ↔ DTE (Fase 2):
   // INTERNAL_API_KEY valida eventos entrantes del DTE Service.
   // DTE_INTERNAL_API_KEY se envía al DTE Service en /internal/provisioning/*.

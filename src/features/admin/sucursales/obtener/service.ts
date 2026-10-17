@@ -1,14 +1,14 @@
-import { query } from '../../../../shared/config/database.js';
+import { servicioEmpresaDte } from '../../../../shared/dte-empresa.js';
 
-export const obtenerSucursal = async ({ tenantId, sucursalId }: { tenantId: string; sucursalId: string }) => {
-  const { rows } = await query(
-    `SELECT id, tenant_id, branch_id, dte_establecimiento_id, fiscal_status,
-            sync_error, last_fiscal_sync_at,
-            nombre, direccion, telefono, es_principal, activo, creado_en
-     FROM sucursales
-     WHERE id = $1 AND tenant_id = $2`,
-    [sucursalId, tenantId]
-  );
-  if (rows.length === 0) throw { status: 404, mensaje: 'Sucursal no encontrada.' };
-  return rows[0];
-};
+/**
+ * F3 (spec «DTE única fuente de verdad», 2026-10-16): la sucursal pedida por
+ * el POS es un establecimiento del DTE. Se consulta la ficha de empresa al
+ * DTE Service; si el establecimiento no pertenece al tenant → 404 (aislamiento).
+ */
+export const obtenerSucursal = async ({
+  tenantId,
+  sucursalId,
+}: {
+  tenantId: string;
+  sucursalId: string;
+}) => servicioEmpresaDte.obtenerEstablecimiento(tenantId, sucursalId);

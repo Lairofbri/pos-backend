@@ -1,4 +1,5 @@
 import { query } from '../../../../shared/config/database.js';
+import { servicioEmpresaDte } from '../../../../shared/dte-empresa.js';
 
 export const listarMovimientos = async ({
   tenantId,
@@ -61,18 +62,17 @@ export const listarMovimientos = async ({
        m.id, m.producto_id, m.tipo_movimiento, m.cantidad,
        m.stock_anterior, m.stock_posterior, m.motivo,
        m.referencia_tipo, m.referencia_id, m.creado_en,
+       m.sucursal_id,
        m.unidad_medida_id, m.cantidad_input, m.unidad_input_id,
        m.movimiento_revertido_id, m.revertido_en,
        m.costo_unitario,
        un.nombre AS unidad_nombre, un.abreviatura AS unidad_abrev,
        p.nombre AS producto_nombre,
-       uu.nombre AS creado_por_nombre,
-       s.nombre AS sucursal_nombre
+       uu.nombre AS creado_por_nombre
      FROM movimientos_inventario m
      JOIN productos p ON p.id = m.producto_id AND p.tenant_id = $1
      LEFT JOIN unidades_medida un ON un.id = m.unidad_medida_id
      LEFT JOIN usuarios uu ON uu.id = m.creado_por
-     LEFT JOIN sucursales s ON s.id = m.sucursal_id
      WHERE ${condiciones.join(' AND ')}
      ORDER BY m.creado_en DESC
      LIMIT $${idx++} OFFSET $${idx}`,
@@ -86,8 +86,15 @@ export const listarMovimientos = async ({
     valores
   );
 
+  // F3 — el nombre de la sucursal (establecimiento) sale del DTE.
+  const nombres = await servicioEmpresaDte.mapaNombresEstablecimiento(tenantId);
+  const movimientos = (rows as Array<Record<string, unknown>>).map((m) => ({
+    ...m,
+    sucursal_nombre: m.sucursal_id ? nombres.get(String(m.sucursal_id)) ?? null : null,
+  }));
+
   return {
-    movimientos: rows,
+    movimientos,
     paginacion: {
       total: parseInt((conteo[0] as { total: string }).total),
       pagina,

@@ -40,6 +40,23 @@ export const crearClienteInternoDte = (baseURL: string) => {
   return cliente;
 };
 
+/**
+ * Cliente público del DTE Service (sin credenciales). Se usa para las rutas
+ * públicas como `GET /api/tenants` (lista de empresas del login). No lleva
+ * ni la clave interna ni la API Key técnica del tenant.
+ */
+export const crearClientePublicoDte = (baseURL: string) => {
+  const cliente = axios.create({
+    baseURL,
+    timeout: env.DTE_TIMEOUT,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  configurarInterceptores(cliente, baseURL);
+
+  return cliente;
+};
+
 const configurarInterceptores = (cliente: ReturnType<typeof axios.create>, baseURL: string) => {
   cliente.interceptors.response.use(
     (response) => {

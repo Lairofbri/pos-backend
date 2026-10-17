@@ -1,16 +1,20 @@
 import { query } from '../../../shared/config/database.js';
 import { obtenerClientePorTenant } from '../../../shared/dte-client.js';
+import { servicioEmpresaDte } from '../../../shared/dte-empresa.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { limpiarPayloadSecreto } from '../payload-seguro.js';
 
 /**
- * Factory del servicio de anulación DTE (Fase 5).
- * Acepta dependencias inyectables para unit tests (db fake, cliente DTE fake).
- * El módulo exporta una instancia por defecto (uso normal) y la factory.
+ * Factory del servicio de anulación DTE (Fase 5 + F3).
+ * Acepta dependencias inyectables para unit tests (db fake, cliente DTE fake,
+ * resolvedor de establecimiento fake). El módulo exporta una instancia por
+ * defecto (uso normal) y la factory.
  *
- * Fase 5 — conserva el establecimiento original del DTE:
+ * F3 (spec «DTE única fuente de verdad», 2026-10-16) — conserva el
+ * establecimiento original del DTE:
  * 1) Se lee de `dtes_orden` (persistido al emitir, migración 073).
- * 2) Filas históricas (pre-Fase 5): se resuelve desde la sucursal de la orden.
+ * 2) Filas históricas (pre-Fase 5): se lee `ordenes.sucursal_id` y se resuelve
+ *    el establecimiento contra el DTE (ya NO se lee la tabla local `sucursales`).
  * 3) Si no se resuelve, se anula sin acotar (el DTE Service valida por
  *    codigo_generacion + tenant y lo resuelve del propio DTE).
  * El establecimiento se envía al DTE Service como parámetro (spec §9); el
@@ -19,9 +23,17 @@ import { limpiarPayloadSecreto } from '../payload-seguro.js';
 const crearServicioAnularDte = (dependencias: {
   db?: { query: typeof query };
   obtenerCliente?: typeof obtenerClientePorTenant;
+  resolverEstablecimiento?: (
+    tenantId: string,
+    referencia: string
+  ) => Promise<{ dte_establecimiento_id: string } | null>;
 } = {}) => {
   const db = dependencias.db || { query };
   const obtenerCliente = dependencias.obtenerCliente || obtenerClientePorTenant;
+  const resolverEstablecimiento =
+    dependencias.resolverEstablecimiento ||
+    ((tenantId: string, referencia: string) =>
+      servicioEmpresaDte.resolverEstablecimientoFiscal(tenantId, referencia));
 
   const resolverEstablecimientoOriginal = async (
     tenantId: string,
@@ -40,16 +52,14 @@ const crearServicioAnularDte = (dependencias: {
 
     if (dte?.orden_id) {
       const { rows: ordenRows } = await db.query(
-        `SELECT s.dte_establecimiento_id
-         FROM ordenes o
-         JOIN sucursales s ON s.id = o.sucursal_id AND s.tenant_id = o.tenant_id
-         WHERE o.id = $1 AND o.tenant_id = $2
-         LIMIT 1`,
+        `SELECT sucursal_id FROM ordenes WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
         [dte.orden_id, tenantId]
       );
-      const establecimientoId = (ordenRows[0] as { dte_establecimiento_id?: string | null } | undefined)
-        ?.dte_establecimiento_id;
-      if (establecimientoId) return establecimientoId;
+      const referencia = (ordenRows[0] as { sucursal_id?: string | null } | undefined)?.sucursal_id;
+      if (referencia) {
+        const establecimiento = await resolverEstablecimiento(tenantId, String(referencia));
+        if (establecimiento?.dte_establecimiento_id) return establecimiento.dte_establecimiento_id;
+      }
     }
 
     return null;

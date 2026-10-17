@@ -1,28 +1,28 @@
 import type { Request, Response } from 'express';
-import { exito, error, errorServidor } from '../../../../shared/utils/response.js';
-import { logger } from '../../../../shared/utils/logger.js';
-import { actualizarSucursalSchema } from './request.js';
-import { actualizarSucursal } from './service.js';
+import { error } from '../../../../shared/utils/response.js';
+import { registrarIntentoEscrituraBloqueado, EVENTO_SUCURSAL_BLOQUEADA } from '../../../../shared/utils/auditoria.js';
+import { MENSAJE_SUCURSAL_EDICION_SOLO_DTE } from '../../../../shared/empresa.js';
 
-const manejarError = (res: Response, err: unknown) => {
-  const e = err as { status?: number; mensaje?: string };
-  if (e.status && e.mensaje) return error(res, e.mensaje, e.status);
-  logger.error('Error no controlado al actualizar sucursal', { error: (err as Error).message, stack: (err as Error).stack });
-  return errorServidor(res);
-};
-
+/**
+ * PATCH /api/v1/sucursales/:id — BLOQUEADO (F2, 2026-10-16).
+ *
+ * La edición de sucursales (nombre, dirección, teléfono, principal, activo) se
+ * administra en el DTE Service. El POS ya no modifica establecimientos.
+ *
+ * La ruta se conserva para responder con un error explícito y auditar el
+ * intento. Rollback (§6 del spec): volver a delegar en
+ * `actualizarSucursal` (el servicio sigue disponible).
+ */
 export const handler = async (req: Request, res: Response) => {
-  const { error: validacionError, value } = actualizarSucursalSchema.validate(req.body);
-  if (validacionError) return error(res, validacionError.details[0].message, 400);
+  registrarIntentoEscrituraBloqueado({
+    evento: EVENTO_SUCURSAL_BLOQUEADA,
+    tenantId: req.usuario!.tenant_id,
+    usuarioId: req.usuario!.id,
+    metodo: req.method,
+    ruta: req.originalUrl,
+    campos: Object.keys((req.body ?? {}) as Record<string, unknown>),
+    ip: req.ip,
+  });
 
-  try {
-    const sucursal = await actualizarSucursal({
-      tenantId: req.usuario!.tenant_id,
-      sucursalId: req.params.id as string,
-      datos: value,
-    });
-    return exito(res, { sucursal }, 'Sucursal actualizada exitosamente.');
-  } catch (err) {
-    return manejarError(res, err);
-  }
+  return error(res, MENSAJE_SUCURSAL_EDICION_SOLO_DTE, 409);
 };

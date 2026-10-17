@@ -3,6 +3,7 @@ import { query } from '../../../shared/config/database.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { exito, error, errorServidor } from '../../../shared/utils/response.js';
 import { obtenerClientePorTenant } from '../../../shared/dte-client.js';
+import { servicioEmpresaDte } from '../../../shared/dte-empresa.js';
 import { validarUuidQuery } from '../../../shared/middlewares/uuid.middleware.js';
 import { obtener } from '../impresoras/service.js';
 import { formatoPreCuenta, formatoTicketConsumo, formatoCocina, formatoFactura, resolverAncho, ANCHO_POR_DEFECTO } from './formats.js';
@@ -57,13 +58,11 @@ const obtenerDatosOrden = async (tenantId: string, ordenId: string) => {
     [ordenId, tenantId]
   );
 
-  const { rows: tenantRows } = await query(
-    `SELECT id, nombre, nit, nrc, direccion, telefono, email, logo_url
-     FROM tenants WHERE id = $1`,
-    [tenantId]
-  );
+  // F3 — la identidad de EMPRESA que se imprime en el ticket sale del DTE
+  // (fuente de verdad), no de la tabla local `tenants`.
+  const tenant = await servicioEmpresaDte.obtenerDatosEmisor(tenantId);
 
-  return { orden: ordenRows[0], items, pagos, tenant: tenantRows[0] || {} };
+  return { orden: ordenRows[0], items, pagos, tenant };
 };
 
 const obtenerDteFiscal = async (tenantId: string, codigoGeneracion: string | null) => {

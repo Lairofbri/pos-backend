@@ -1,4 +1,5 @@
 import { query } from '../../../../shared/config/database.js';
+import { servicioEmpresaDte } from '../../../../shared/dte-empresa.js';
 import { logger } from '../../../../shared/utils/logger.js';
 
 export const obtenerDetalleSesion = async ({
@@ -9,12 +10,11 @@ export const obtenerDetalleSesion = async ({
   tenantId: string;
 }) => {
   const { rows: sesiones } = await query(
-    `SELECT s.id, s.sucursal_id, su.nombre AS sucursal_nombre,
+    `SELECT s.id, s.sucursal_id,
             s.estado, s.notas, s.stock_snapshot, s.creado_en, s.cerrado_en,
             cu.nombre AS creado_por_nombre,
             cu2.nombre AS cerrado_por_nombre
      FROM inventario_sesiones s
-     LEFT JOIN sucursales su ON su.id = s.sucursal_id
      LEFT JOIN usuarios cu ON cu.id = s.creado_por
      LEFT JOIN usuarios cu2 ON cu2.id = s.cerrado_por
      WHERE s.id = $1 AND s.tenant_id = $2`,
@@ -27,6 +27,10 @@ export const obtenerDetalleSesion = async ({
 
   const sesion = sesiones[0];
   const snapshot = (sesion.stock_snapshot as Record<string, number>) || {};
+
+  // F3 — el nombre de la sucursal (establecimiento) sale del DTE.
+  const nombres = await servicioEmpresaDte.mapaNombresEstablecimiento(tenantId);
+  const nombreSucursal = sesion.sucursal_id ? nombres.get(String(sesion.sucursal_id)) ?? null : null;
 
   const { rows: conteos } = await query(
     `SELECT c.producto_id, p.nombre AS producto_nombre,
@@ -91,7 +95,7 @@ export const obtenerDetalleSesion = async ({
   return {
     id: sesion.id,
     sucursal_id: sesion.sucursal_id,
-    sucursal_nombre: sesion.sucursal_nombre,
+    sucursal_nombre: nombreSucursal,
     estado: sesion.estado,
     notas: sesion.notas,
     stock_snapshot: snapshot,

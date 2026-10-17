@@ -1,35 +1,59 @@
 import { query } from '../../../shared/config/database.js';
-import { obtenerRestaurante } from '../obtener/service.js';
 import { logger } from '../../../shared/utils/logger.js';
+import { camposEmpresaEnviados, MENSAJE_EMPRESA_SOLO_DTE } from '../../../shared/empresa.js';
 
-export const actualizarRestaurante = async ({ tenantId, datos }: { tenantId: string; datos: Record<string, unknown> }) => {
-  await obtenerRestaurante({ tenantId });
+/**
+ * Actualización de la configuración del restaurante (F2, 2026-10-16).
+ *
+ * El POS solo escribe la preferencia OPERATIVA `pos_default_mode`. Los datos de
+ * EMPRESA (nombre, nit, nrc, direccion, telefono, email, logo_url) son fuente
+ * de verdad del DTE Service: si llegan, el servicio también los rechaza
+ * (defensa en profundidad, además del bloqueo del handler).
+ *
+ * Factory con dependencias inyectables para unit tests (db fake).
+ */
+const crearServicioRestaurante = (dependencias: { db?: { query: typeof query } } = {}) => {
+  const db = dependencias.db || { query };
 
-  const campos: string[] = [];
-  const valores: unknown[] = [];
-  let idx = 1;
+  const actualizarRestaurante = async ({
+    tenantId,
+    datos,
+  }: {
+    tenantId: string;
+    datos: Record<string, unknown>;
+  }) => {
+    const camposEmpresa = camposEmpresaEnviados(datos);
+    if (camposEmpresa.length > 0) {
+      throw { status: 409, mensaje: MENSAJE_EMPRESA_SOLO_DTE, campos: camposEmpresa };
+    }
 
-  if (datos.nombre !== undefined) { campos.push(`nombre = $${idx++}`); valores.push(datos.nombre); }
-  if (datos.nit !== undefined) { campos.push(`nit = $${idx++}`); valores.push(datos.nit || null); }
-  if (datos.nrc !== undefined) { campos.push(`nrc = $${idx++}`); valores.push(datos.nrc || null); }
-  if (datos.direccion !== undefined) { campos.push(`direccion = $${idx++}`); valores.push(datos.direccion || null); }
-  if (datos.telefono !== undefined) { campos.push(`telefono = $${idx++}`); valores.push(datos.telefono || null); }
-  if (datos.email !== undefined) { campos.push(`email = $${idx++}`); valores.push(datos.email || null); }
-  if (datos.logo_url !== undefined) { campos.push(`logo_url = $${idx++}`); valores.push(datos.logo_url || null); }
-  if (datos.pos_default_mode !== undefined) { campos.push(`pos_default_mode = $${idx++}`); valores.push(datos.pos_default_mode); }
+    if (datos.pos_default_mode === undefined) {
+      throw { status: 400, mensaje: 'No hay campos operativos del POS para actualizar.' };
+    }
 
-  if (campos.length === 0) {
-    throw { status: 400, mensaje: 'No hay campos para actualizar.' };
-  }
+    const { rows } = await db.query(
+      `UPDATE tenants SET pos_default_mode = $1
+       WHERE id = $2
+       RETURNING id, pos_default_mode`,
+      [datos.pos_default_mode, tenantId]
+    );
 
-  valores.push(tenantId);
-  const { rows } = await query(
-    `UPDATE tenants SET ${campos.join(', ')}
-     WHERE id = $${idx++}
-     RETURNING id, nombre, nit, nrc, direccion, telefono, email, logo_url, plan, pos_default_mode`,
-    valores
-  );
+    if (rows.length === 0) {
+      throw { status: 404, mensaje: 'Restaurante no encontrado.' };
+    }
 
-  logger.info('Restaurante actualizado', { tenant_id: tenantId });
-  return rows[0];
+    logger.info('Preferencias operativas del POS actualizadas', {
+      tenant_id: tenantId,
+      pos_default_mode: datos.pos_default_mode,
+    });
+
+    return rows[0];
+  };
+
+  return { actualizarRestaurante };
 };
+
+// Instancia por defecto (uso normal) + factory para unit tests.
+export const servicioRestaurante = crearServicioRestaurante();
+export const crearServicioRestauranteFactory = crearServicioRestaurante;
+export const actualizarRestaurante = servicioRestaurante.actualizarRestaurante;

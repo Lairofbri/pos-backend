@@ -538,26 +538,3 @@ export const listarUsuariosParaPin = async ({ tenantId }: { tenantId: string }) 
   );
   return rows;
 };
-
-export const listarTenants = async () => {
-  // El selector de empresa del login se alimenta del estado de provisión
-  // fiscal (fiscal_sync_status) y las sucursales de su fiscal_status —
-  // decisión 2026-10-07: el POS muestra qué empresas/sucursales pueden emitir.
-  const { rows: tenants } = await query(
-    'SELECT id, nombre, nombre_comercial, logo_url, fiscal_sync_status FROM tenants WHERE activo = TRUE ORDER BY nombre'
-  );
-
-  const tenantIds = tenants.map((t: Record<string, unknown>) => t.id);
-  const { rows: sucursales } = tenantIds.length > 0
-    ? await query(
-        `SELECT id, tenant_id, nombre, es_principal,
-                fiscal_status, branch_id, dte_establecimiento_id
-         FROM sucursales
-         WHERE tenant_id = ANY($1::uuid[]) AND activo = TRUE
-         ORDER BY es_principal DESC, nombre`,
-        [tenantIds]
-      )
-    : { rows: [] };
-
-  return { tenants, sucursales };
-};

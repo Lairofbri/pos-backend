@@ -9,6 +9,12 @@ import { logger } from '../../../shared/utils/logger.js';
  *
  * El DTE Service es la fuente de verdad fiscal; el POS crea/actualiza su
  * proyección operativa con los MISMO identificadores (tenant_id / branch_id).
+ *
+ * ALCANCE (F2, 2026-10-16): este receptor es SOLO proyección/espejo de lo que
+ * publica el DTE. No es una vía de escritura de campos editables: el POS ya no
+ * expone edición de empresa (PUT /restaurante) ni de sucursal (POST/PATCH
+ * /sucursales). Las columnas de empresa de `tenants`/`sucursales` se retiran en
+ * F5; hasta entonces se mantienen como caché de lectura.
  * Idempotente:
  * - idempotency_keys (operation_id) → respuesta cacheada.
  * - INSERT con ON CONFLICT → nunca duplica filas.

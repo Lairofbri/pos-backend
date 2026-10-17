@@ -1,35 +1,28 @@
 import type { Request, Response } from 'express';
-import { error, errorServidor } from '../../../../shared/utils/response.js';
-import { logger } from '../../../../shared/utils/logger.js';
-import { crearSucursalSchema } from './request.js';
-import { servicioSucursales } from './service.js';
+import { error } from '../../../../shared/utils/response.js';
+import { registrarIntentoEscrituraBloqueado, EVENTO_SUCURSAL_BLOQUEADA } from '../../../../shared/utils/auditoria.js';
+import { MENSAJE_SUCURSAL_ALTA_SOLO_DTE } from '../../../../shared/empresa.js';
 
-const manejarError = (res: Response, err: unknown) => {
-  const e = err as { status?: number; mensaje?: string };
-  if (e.status && e.mensaje) return error(res, e.mensaje, e.status);
-  if ((err as { code?: string }).code === '23505') return error(res, 'Ya existe una sucursal con ese nombre.', 409);
-  logger.error('Error no controlado al crear sucursal', { error: (err as Error).message, stack: (err as Error).stack });
-  return errorServidor(res);
-};
-
+/**
+ * POST /api/v1/sucursales — BLOQUEADO (F2, 2026-10-16).
+ *
+ * El alta de sucursales (establecimientos) se administra en el DTE Service: el
+ * DTE genera el `branch_id` y los códigos MH. El POS ya no crea sucursales.
+ *
+ * La ruta se conserva para responder con un error explícito y auditar el
+ * intento. Rollback (§6 del spec): volver a delegar en
+ * `servicioSucursales.crearSucursal` (el servicio sigue disponible).
+ */
 export const handler = async (req: Request, res: Response) => {
-  // Idempotencia (Fase 3): header Idempotency-Key opcional.
-  const operationIdHeader = req.headers['idempotency-key'] as string | undefined;
-  const bodyConOperation = operationIdHeader
-    ? { ...req.body, operation_id: operationIdHeader }
-    : req.body;
+  registrarIntentoEscrituraBloqueado({
+    evento: EVENTO_SUCURSAL_BLOQUEADA,
+    tenantId: req.usuario!.tenant_id,
+    usuarioId: req.usuario!.id,
+    metodo: req.method,
+    ruta: req.originalUrl,
+    campos: Object.keys((req.body ?? {}) as Record<string, unknown>),
+    ip: req.ip,
+  });
 
-  const { error: validacionError, value } = crearSucursalSchema.validate(bodyConOperation);
-  if (validacionError) return error(res, validacionError.details[0].message, 400);
-
-  try {
-    const resultado = await servicioSucursales.crearSucursal({
-      tenantId: req.usuario!.tenant_id,
-      datos: value,
-      operationId: value.operation_id,
-    });
-    return res.status(resultado.status).json(resultado.body);
-  } catch (err) {
-    return manejarError(res, err);
-  }
+  return error(res, MENSAJE_SUCURSAL_ALTA_SOLO_DTE, 409);
 };

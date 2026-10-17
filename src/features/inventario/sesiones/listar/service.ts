@@ -1,4 +1,5 @@
 import { query } from '../../../../shared/config/database.js';
+import { servicioEmpresaDte } from '../../../../shared/dte-empresa.js';
 
 export const listarSesiones = async ({
   tenantId,
@@ -37,17 +38,16 @@ export const listarSesiones = async ({
 
   const { rows } = await query(
     `SELECT
-       s.id, s.sucursal_id, su.nombre AS sucursal_nombre,
+       s.id, s.sucursal_id,
        s.estado, s.notas, s.stock_snapshot, s.creado_en, s.cerrado_en,
        u.nombre AS creado_por_nombre,
        COUNT(c.id)::int AS productos_contados,
        jsonb_array_length(s.stock_snapshot::jsonb)::int AS total_productos_con_stock
      FROM inventario_sesiones s
-     LEFT JOIN sucursales su ON su.id = s.sucursal_id
      LEFT JOIN usuarios u ON u.id = s.creado_por
      LEFT JOIN inventario_conteos c ON c.sesion_id = s.id
      WHERE ${condiciones.join(' AND ')}
-     GROUP BY s.id, su.nombre, u.nombre
+     GROUP BY s.id, u.nombre
      ORDER BY s.creado_en DESC
      LIMIT $${idx++} OFFSET $${idx}`,
     [...valores, limite, offset]
@@ -60,8 +60,16 @@ export const listarSesiones = async ({
     valores
   );
 
+  // F3 — el nombre de la sucursal (establecimiento) sale del DTE, no del
+  // JOIN local a `sucursales`.
+  const nombres = await servicioEmpresaDte.mapaNombresEstablecimiento(tenantId);
+  const sesiones = (rows as Array<Record<string, unknown>>).map((row) => ({
+    ...row,
+    sucursal_nombre: row.sucursal_id ? nombres.get(String(row.sucursal_id)) ?? null : null,
+  }));
+
   return {
-    sesiones: rows,
+    sesiones,
     paginacion: {
       total: parseInt((conteo[0] as { total: string }).total),
       pagina,

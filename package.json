@@ -19,6 +19,8 @@
     "test:usuario-inicial": "tsx --test tests/unit/usuario-inicial.test.ts",
     "test:estado-fiscal": "tsx --test tests/unit/estado-fiscal.test.ts",
     "test:sucursales": "tsx --test tests/unit/sucursales.test.ts",
+    "test:bloqueo": "tsx --test tests/unit/bloqueo-empresa.test.ts",
+    "test:empresa-dte": "tsx --test tests/unit/empresa-dte.test.ts",
     "test:escpos": "tsx --test tests/unit/escpos.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

@@ -37,7 +37,7 @@ const crearDbFake = (dtesOrden: Fila[], ordenesSucursal: Fila[] = []) => {
       const fila = dtesOrden.find((r) => r.codigo_generacion === params[0] && r.tenant_id === params[1]);
       return { rows: fila ? [fila] : [] };
     }
-    if (sql.includes('FROM ordenes o')) {
+    if (sql.includes('SELECT sucursal_id FROM ordenes WHERE id')) {
       const fila = ordenesSucursal.find((r) => r.orden_id === params[0] && r.tenant_id === params[1]);
       return { rows: fila ? [fila] : [] };
     }
@@ -76,13 +76,21 @@ test('anula usando el establecimiento persistido en dtes_orden', async () => {
   assert.ok(db.updates.length === 1);
 });
 
-test('DTE histórico sin establecimiento: lo resuelve desde la sucursal de la orden', async () => {
+test('DTE histórico sin establecimiento: lo resuelve desde la sucursal de la orden (vía DTE)', async () => {
   const db = crearDbFake(
     [{ codigo_generacion: CG, tenant_id: TENANT, orden_id: ORDEN, dte_establecimiento_id: null }],
-    [{ orden_id: ORDEN, tenant_id: TENANT, dte_establecimiento_id: EST }]
+    [{ orden_id: ORDEN, tenant_id: TENANT, sucursal_id: 'ref-sucursal' }]
   );
   const cliente = crearClienteFake();
-  const { anular } = crearServicioAnularDteFactory({ db, obtenerCliente: cliente.obtenerCliente });
+  const { anular } = crearServicioAnularDteFactory({
+    db,
+    obtenerCliente: cliente.obtenerCliente,
+    resolverEstablecimiento: async (tenantId: string, referencia: string) => {
+      assert.equal(tenantId, TENANT);
+      assert.equal(referencia, 'ref-sucursal');
+      return { dte_establecimiento_id: EST };
+    },
+  });
 
   await anular({ tenantId: TENANT, usuarioId: 'u1', datos: baseDatos });
 
@@ -92,7 +100,11 @@ test('DTE histórico sin establecimiento: lo resuelve desde la sucursal de la or
 test('sin establecimiento resoluble: payload sin establecimiento_id (DTE lo resuelve)', async () => {
   const db = crearDbFake([{ codigo_generacion: CG, tenant_id: TENANT, orden_id: ORDEN, dte_establecimiento_id: null }]);
   const cliente = crearClienteFake();
-  const { anular } = crearServicioAnularDteFactory({ db, obtenerCliente: cliente.obtenerCliente });
+  const { anular } = crearServicioAnularDteFactory({
+    db,
+    obtenerCliente: cliente.obtenerCliente,
+    resolverEstablecimiento: async () => null,
+  });
 
   await anular({ tenantId: TENANT, usuarioId: 'u1', datos: baseDatos });
 

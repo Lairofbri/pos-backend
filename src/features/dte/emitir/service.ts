@@ -1,5 +1,6 @@
 import { query, getClient } from '../../../shared/config/database.js';
 import { obtenerClientePorTenant } from '../../../shared/dte-client.js';
+import { servicioEmpresaDte } from '../../../shared/dte-empresa.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { limpiarPayloadSecreto } from '../payload-seguro.js';
 import { mapearEstadoFiscal, extraerResultado } from '../estados.js';
@@ -262,13 +263,13 @@ export const construirPayloadEmitir = ({
 };
 
 const obtenerContextoFiscalSucursal = async (tenantId: string, orden: OrdenRow): Promise<SucursalFiscalRow> => {
-  const sucursalId = orden.sucursal_id as string | null | undefined;
+  const referencia = orden.sucursal_id as string | null | undefined;
   const contextoBase = {
     tenant_id: tenantId,
-    sucursal_id: sucursalId || null,
+    sucursal_id: referencia || null,
   };
 
-  if (!sucursalId) {
+  if (!referencia) {
     logger.warn('Emisión DTE bloqueada: orden sin sucursal operativa', contextoBase);
     throw {
       status: 409,
@@ -276,36 +277,34 @@ const obtenerContextoFiscalSucursal = async (tenantId: string, orden: OrdenRow):
     };
   }
 
-  const { rows } = await query(
-    `SELECT id, branch_id, dte_establecimiento_id, fiscal_status, activo
-     FROM sucursales
-     WHERE id = $1 AND tenant_id = $2`,
-    [sucursalId, tenantId]
-  );
+  // F3 — el POS ya no lee la tabla local `sucursales`: resuelve el
+  // establecimiento contra el DTE (fuente de verdad). Acepta el
+  // `establecimiento_id` canónico o el `branch_id` (que es lo que el POS
+  // histórico persiste en `sucursal_id`).
+  const establecimiento = await servicioEmpresaDte.resolverEstablecimientoFiscal(tenantId, referencia);
 
-  const sucursal = rows[0] as SucursalFiscalRow | undefined;
-  if (!sucursal) {
-    logger.warn('Emisión DTE bloqueada: sucursal no pertenece al tenant', contextoBase);
+  if (!establecimiento) {
+    logger.warn('Emisión DTE bloqueada: la sucursal no es un establecimiento del DTE', contextoBase);
     throw {
       status: 409,
-      mensaje: 'La sucursal de la orden no pertenece al tenant autenticado.',
+      mensaje: 'La sucursal de la orden no corresponde a un establecimiento del DTE de la empresa.',
     };
   }
 
   const contextoFiscal = {
     ...contextoBase,
-    branch_id: sucursal.branch_id,
-    dte_establecimiento_id: sucursal.dte_establecimiento_id,
-    fiscal_status: sucursal.fiscal_status,
-    sucursal_activa: sucursal.activo,
+    branch_id: establecimiento.branch_id,
+    dte_establecimiento_id: establecimiento.dte_establecimiento_id,
+    fiscal_status: establecimiento.fiscal_status,
+    sucursal_activa: establecimiento.activo,
   };
 
   if (
-    !sucursal.activo
-    || sucursal.fiscal_status === 'inactive'
-    || sucursal.fiscal_status !== 'ready'
-    || !sucursal.branch_id
-    || !sucursal.dte_establecimiento_id
+    !establecimiento.activo
+    || establecimiento.fiscal_status === 'inactive'
+    || establecimiento.fiscal_status !== 'ready'
+    || !establecimiento.branch_id
+    || !establecimiento.dte_establecimiento_id
   ) {
     logger.warn('Emisión DTE bloqueada: vínculo fiscal no está listo', contextoFiscal);
     throw {
@@ -314,8 +313,14 @@ const obtenerContextoFiscalSucursal = async (tenantId: string, orden: OrdenRow):
     };
   }
 
-  logger.info('Contexto fiscal resuelto para emisión DTE', contextoFiscal);
-  return sucursal;
+  logger.info('Contexto fiscal resuelto para emisión DTE (desde el DTE)', contextoFiscal);
+  return {
+    id: establecimiento.id,
+    branch_id: establecimiento.branch_id,
+    dte_establecimiento_id: establecimiento.dte_establecimiento_id,
+    fiscal_status: establecimiento.fiscal_status,
+    activo: establecimiento.activo,
+  };
 };
 
 export const emitir = async ({ tenantId, usuarioId: _usuarioId, datos }: { tenantId: string; usuarioId: string; datos: Record<string, unknown> }) => {
