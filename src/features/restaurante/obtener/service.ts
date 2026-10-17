@@ -17,7 +17,7 @@ export const obtenerRestaurante = async ({ tenantId }: { tenantId: string }) => 
   const configuracion = empresa.configuracion ?? null;
 
   // Único dato de `tenants` que sigue siendo del POS: la preferencia operativa.
-  const { rows } = await query('SELECT pos_default_mode FROM tenants WHERE id = $1', [tenantId]);
+  const { rows } = await query('SELECT pos_default_mode, (dte_api_key_enc IS NOT NULL OR dte_api_key IS NOT NULL) AS dte_api_key_configurada FROM tenants WHERE id = $1', [tenantId]);
 
   return {
     id: empresa.tenant?.id ?? tenantId,
@@ -31,6 +31,8 @@ export const obtenerRestaurante = async ({ tenantId }: { tenantId: string }) => 
     logo_url: null,
     plan: null,
     pos_default_mode: (rows[0] as { pos_default_mode?: string } | undefined)?.pos_default_mode ?? null,
+    // Solo un booleano: la API Key de integración POS → DTE nunca se expone.
+    dte_api_key_configurada: (rows[0] as { dte_api_key_configurada?: boolean } | undefined)?.dte_api_key_configurada ?? false,
     // Señales fiscales (sin secretos) para la pantalla de solo lectura de F4.
     codigo_actividad: configuracion?.codigo_actividad ?? null,
     desc_actividad: configuracion?.desc_actividad ?? null,

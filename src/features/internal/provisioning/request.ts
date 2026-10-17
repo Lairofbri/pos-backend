@@ -66,6 +66,16 @@ const payloadUsuarioInicialEvento = Joi.object({
     }),
 });
 
+// API Key de integración POS → DTE (entrega automática desde el DTE, 2026-10-17).
+// Se recibe por el canal interno autenticado; el POS la cifra antes de guardarla.
+export const guardarApiKeyDteSchema = Joi.object({
+  api_key: Joi.string().trim().min(16).max(200).required().messages({
+    'any.required': 'api_key es requerida.',
+    'string.min': 'api_key inválida.',
+    'string.max': 'api_key inválida.',
+  }),
+});
+
 export const recibirEventoSchema = Joi.object({
   operation_id: Joi.string().uuid().required().messages({
     'any.required': 'operation_id es requerido.',

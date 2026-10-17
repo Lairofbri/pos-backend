@@ -1,4 +1,6 @@
 import { query } from '../../../shared/config/database.js';
+import { env } from '../../../shared/config/env.js';
+import { encriptarTexto } from '../../../shared/utils/crypto.js';
 import { logger } from '../../../shared/utils/logger.js';
 
 /**
@@ -177,6 +179,48 @@ const crearServicioEventosProvision = (dependencias: { db?: { query: typeof quer
   };
 
   /**
+   * API Key de integración POS → DTE (entrega automática, 2026-10-17).
+   *
+   * El DTE genera la clave, guarda **solo su hash** y la entrega acá por el
+   * canal interno (`X-Internal-Api-Key`, red privada). El POS la cifra
+   * (AES-256-GCM con `POS_ENCRYPTION_KEY`) y la guarda en
+   * `tenants.dte_api_key_enc`; NUNCA se persiste en texto plano, ni se
+   * devuelve, ni se loguea.
+   *
+   * Idempotente: reentregar la clave (misma o rotada) sobrescribe.
+   * Si el tenant aún no está proyectado → 409 (el DTE puede reintentar tras
+   * entregar `TENANT_CREADO`).
+   */
+  const guardarApiKeyDte = async ({ tenantId, apiKey }: { tenantId: string; apiKey: string }) => {
+    const clave = String(apiKey ?? '').trim();
+    if (clave.length < 16) {
+      throw { status: 400, mensaje: 'api_key inválida.' };
+    }
+
+    const { rows } = await db.query('SELECT id FROM tenants WHERE id = $1', [tenantId]);
+    if (rows.length === 0) {
+      logger.warn('API Key DTE rechazada: tenant no proyectado', { tenantId });
+      throw { status: 409, mensaje: 'Tenant no proyectado en POS. Procesar TENANT_CREADO primero.' };
+    }
+
+    const cifrado = encriptarTexto(clave, env.POS_ENCRYPTION_KEY);
+    if (!cifrado) {
+      throw { status: 500, mensaje: 'No se pudo cifrar la API Key de facturación.' };
+    }
+
+    await db.query(
+      `UPDATE tenants
+          SET dte_api_key_enc = $1, dte_api_key = NULL, actualizado_en = NOW()
+        WHERE id = $2`,
+      [cifrado, tenantId]
+    );
+
+    logger.info('API Key de integración DTE guardada (cifrada)', { tenantId });
+
+    return { tenant_id: tenantId, configurada: true };
+  };
+
+  /**
    * Usuario administrador inicial del tenant (evento USUARIO_INICIAL).
    *
    * REGLAS (2026-10-07):
@@ -246,7 +290,7 @@ const crearServicioEventosProvision = (dependencias: { db?: { query: typeof quer
     });
   };
 
-  return { recibirEvento };
+  return { recibirEvento, guardarApiKeyDte };
 };
 
 // Instancia por defecto (uso normal) + factory para unit tests.
