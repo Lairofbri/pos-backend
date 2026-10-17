@@ -91,3 +91,58 @@ test('un establecimiento predeterminado sin vínculo fiscal listo no emite', asy
     (err: { status?: number }) => err.status === 409
   );
 });
+
+// ─────────────────────────────────────────────────────────────
+// Regresión 2026-10-17 — «La sucursal no tiene un vínculo fiscal DTE
+// confirmado y listo para emitir».
+//
+// Las sucursales creadas DIRECTAMENTE en el DTE Service (Frontend DTE) nacen
+// sin `branch_id`: ese id es solo el vínculo operativo histórico con el POS.
+// El DTE sí las considera emitibles (`fiscal_status = ready` + `activo`), así
+// que el POS no debe bloquearlas.
+// ─────────────────────────────────────────────────────────────
+test('un establecimiento ready SIN branch_id (creado en el DTE) emite igual', async () => {
+  const sinBranch: ContextoFiscalEstablecimiento = {
+    ...principal,
+    branch_id: null,
+    nombre: 'CASA MATRIZ',
+  };
+  const resolver = crearResolverContextoFiscal({
+    resolverEstablecimiento: async () => sinBranch,
+    resolverPredeterminado: async () => sinBranch,
+  });
+
+  const contexto = await resolver(TENANT, { sucursal_id: EST_PRINCIPAL });
+
+  assert.equal(contexto.dte_establecimiento_id, EST_PRINCIPAL);
+  assert.equal(contexto.branch_id, null);
+  assert.equal(contexto.fiscal_status, 'ready');
+});
+
+test('un establecimiento inactivo no emite y el mensaje indica el motivo', async () => {
+  const resolver = crearResolverContextoFiscal({
+    resolverEstablecimiento: async () => ({ ...principal, activo: false, nombre: 'Sucursal Norte' }),
+    resolverPredeterminado: async () => null,
+  });
+
+  await assert.rejects(
+    resolver(TENANT, { sucursal_id: EST_PRINCIPAL }),
+    (err: { status?: number; mensaje?: string }) =>
+      err.status === 409
+      && !!err.mensaje?.includes('Sucursal Norte')
+      && !!err.mensaje?.includes('inactiva')
+  );
+});
+
+test('un establecimiento no ready no emite y el mensaje incluye el estado fiscal real', async () => {
+  const resolver = crearResolverContextoFiscal({
+    resolverEstablecimiento: async () => ({ ...principal, fiscal_status: 'pending_mh_data' }),
+    resolverPredeterminado: async () => null,
+  });
+
+  await assert.rejects(
+    resolver(TENANT, { sucursal_id: EST_PRINCIPAL }),
+    (err: { status?: number; mensaje?: string }) =>
+      err.status === 409 && !!err.mensaje?.includes('pending_mh_data')
+  );
+});

@@ -58,6 +58,20 @@ test('payload incluye establecimiento_id y branch_id de la sucursal fiscal', () 
   assert.equal(payloadBase.branch_id, BRANCH_A);
 });
 
+test('payload NO incluye branch_id cuando la sucursal no lo tiene (creada en el DTE)', () => {
+  const { payloadBase } = construirPayloadEmitir({
+    ordenId: 'o1',
+    orden,
+    items,
+    pagos,
+    sucursalFiscal: { ...sucursal(BRANCH_A, EST_A), branch_id: null },
+    tipoDte: '01',
+  });
+
+  assert.equal(payloadBase.establecimiento_id, EST_A);
+  assert.ok(!('branch_id' in payloadBase));
+});
+
 test('payload NO incluye códigos MH del tenant (autoridad = establecimiento)', () => {
   const { payloadBase } = construirPayloadEmitir({
     ordenId: 'o1',

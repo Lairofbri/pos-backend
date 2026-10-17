@@ -253,7 +253,10 @@ export const construirPayloadEmitir = ({
     metodo_pago: pagosMH.length > 1 ? 'mixto' : pagosMH[0]?.codigo === '03' ? 'tarjeta' : 'efectivo',
     orden_referencia: orden.numero_orden?.toString() || null,
     establecimiento_id: sucursalFiscal.dte_establecimiento_id,
-    branch_id: sucursalFiscal.branch_id,
+    // `branch_id` es el vínculo operativo histórico del POS y es OPCIONAL: las
+    // sucursales creadas en el DTE Service pueden no tenerlo. Se omite en vez
+    // de enviar `null` (el DTE solo lo usa como verificación si viene).
+    ...(sucursalFiscal.branch_id ? { branch_id: sucursalFiscal.branch_id } : {}),
     // Fase 3 — clave idempotente: tenant + orden + tipo. Los reintentos
     // reutilizan el mismo DTE en el dte-service (sin nuevo correlativo).
     idempotency_key: `${ordenId}:${tipoDte}`,
@@ -271,6 +274,8 @@ export const construirPayloadEmitir = ({
  *    establecimiento PREDETERMINADO del tenant (la matriz fiscal del DTE): el
  *    cobro ya está hecho y la facturación no se puede bloquear.
  * 3. Sin establecimiento disponible → 409 explícito.
+ * 4. Con establecimiento: solo se exige lo que el DTE exige para emitir
+ *    (`activo` + `fiscal_status = ready`). `branch_id` NO es requisito.
  *
  * Se expone como factory para las pruebas unitarias; el uso normal es la
  * instancia `obtenerContextoFiscalSucursal`.
@@ -348,17 +353,31 @@ export const crearResolverContextoFiscal = (
       sucursal_activa: establecimiento.activo,
     };
 
-    if (
-      !establecimiento.activo
-      || establecimiento.fiscal_status === 'inactive'
-      || establecimiento.fiscal_status !== 'ready'
-      || !establecimiento.branch_id
-      || !establecimiento.dte_establecimiento_id
-    ) {
-      logger.warn('Emisión DTE bloqueada: vínculo fiscal no está listo', contextoFiscal);
+    // F5/F6 — la autoridad fiscal es el DTE: un establecimiento puede emitir
+    // cuando está `activo` y su `fiscal_status` es `ready`. `branch_id` es SOLO
+    // el vínculo operativo histórico con el POS y puede no existir: las
+    // sucursales creadas directamente en el DTE Service (Frontend DTE) nacen
+    // sin `branch_id` y son 100% emitibles (el generador del DTE solo exige
+    // `fiscal_status = ready` + `activo`). Exigirlo acá bloqueaba la emisión de
+    // empresas con establecimientos perfectamente listos (regresión reportada
+    // el 2026-10-17: «La sucursal no tiene un vínculo fiscal DTE confirmado y
+    // listo para emitir», con la sucursal `ready` en el DTE).
+    const motivoBloqueo = !establecimiento.dte_establecimiento_id
+      ? 'no tiene identificador de establecimiento en el DTE'
+      : !establecimiento.activo
+        ? 'está inactiva en el DTE'
+        : establecimiento.fiscal_status !== 'ready'
+          ? `no está lista para emitir (estado fiscal: ${establecimiento.fiscal_status || 'sin_estado'})`
+          : null;
+
+    if (motivoBloqueo) {
+      logger.warn('Emisión DTE bloqueada: vínculo fiscal no está listo', {
+        ...contextoFiscal,
+        motivo: motivoBloqueo,
+      });
       throw {
         status: 409,
-        mensaje: 'La sucursal no tiene un vínculo fiscal DTE confirmado y listo para emitir.',
+        mensaje: `La sucursal «${establecimiento.nombre}» ${motivoBloqueo}. Revisala en el DTE Service antes de emitir.`,
       };
     }
 
