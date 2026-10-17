@@ -11,11 +11,16 @@ type MenuRow = {
   activo: boolean;
 };
 
-export const crearMenu = async ({ tenantId, datos }: { tenantId: string; datos: Record<string, unknown> }) => {
+/**
+ * Alta de un ítem del sidebar. `menus` es un catálogo GLOBAL: el ítem aplica a
+ * todas las empresas (el acceso por rol se resuelve con `rol_permisos`).
+ * Solo el rol `plataforma` llega hasta aquí (endpoint).
+ */
+export const crearMenu = async ({ datos }: { datos: Record<string, unknown> }) => {
   if (datos.parent_id) {
     const { rows: parentRows } = await query(
-      'SELECT id FROM menus WHERE id = $1 AND tenant_id = $2',
-      [datos.parent_id, tenantId]
+      'SELECT id FROM menus WHERE id = $1',
+      [datos.parent_id]
     );
     if (parentRows.length === 0) {
       throw { status: 404, mensaje: 'El menú padre indicado no existe.' };
@@ -23,10 +28,18 @@ export const crearMenu = async ({ tenantId, datos }: { tenantId: string; datos: 
   }
 
   const { rows } = await query(
-    `INSERT INTO menus (tenant_id, parent_id, titulo, icono, ruta, orden, permiso_codigo)
+    `INSERT INTO menus (parent_id, titulo, icono, ruta, orden, permiso_codigo, solo_plataforma)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id, parent_id, titulo, icono, ruta, orden, permiso_codigo, activo`,
-    [tenantId, datos.parent_id || null, datos.titulo, datos.icono || null, datos.ruta || null, datos.orden ?? 0, datos.permiso_codigo || null]
+    [
+      datos.parent_id || null,
+      datos.titulo,
+      datos.icono || null,
+      datos.ruta || null,
+      datos.orden ?? 0,
+      datos.permiso_codigo || null,
+      datos.solo_plataforma === true,
+    ]
   );
 
   return rows[0] as unknown as MenuRow;

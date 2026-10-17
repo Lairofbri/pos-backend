@@ -5,10 +5,15 @@ import { logger } from '../../../shared/utils/logger.js';
 
 export async function handler(req: Request, res: Response) {
   try {
+    const esPlataforma = req.usuario!.rol === 'plataforma';
     const menus = await obtenerMenus({
       tenantId: req.usuario!.tenant_id,
       rol: req.usuario!.rol,
       esAdmin: req.usuario!.rol === 'administrador',
+      // El mantenimiento del catálogo global (Configuraciones > Menú) necesita
+      // ver TODO el catálogo (activos e inactivos), no la vista filtrada por
+      // permisos. Solo se honra para el rol plataforma.
+      completo: esPlataforma && req.query.completo === '1',
     });
     return exito(res, { menus });
   } catch (err) {

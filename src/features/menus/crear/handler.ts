@@ -9,10 +9,7 @@ export async function handler(req: Request, res: Response) {
   if (validacionError) return error(res, validacionError.details[0].message, 400);
 
   try {
-    const menu = await crearMenu({
-      tenantId: req.usuario!.tenant_id,
-      datos: value,
-    });
+    const menu = await crearMenu({ datos: value });
     return creado(res, { menu }, 'Menú creado exitosamente.');
   } catch (err) {
     const e = err as { status?: number; mensaje?: string };

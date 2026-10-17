@@ -35,63 +35,12 @@ const sembrarPermisosTenant = async (tenantId) => {
 };
 
 // ─────────────────────────────────────────────
-// Menú dinámico del sidebar
+// Menú del sidebar
 // ─────────────────────────────────────────────
-
-/**
- * Inserta los menús default para un tenant
- * Usa IDs fijos para que el seed sea idempotente
- */
-const sembrarMenusTenant = async (tenantId) => {
-  const menus = [
-    // Raíces
-    { id: '00000000-0000-4000-8000-000000000001', parent_id: null, titulo: 'POS',             icono: 'shopping-cart', ruta: '/pos',                orden: 1, permiso_codigo: 'ordenes.ver' },
-    { id: '00000000-0000-4000-8000-000000000002', parent_id: null, titulo: 'Cocina',          icono: 'chef-hat',      ruta: '/cocina',             orden: 2, permiso_codigo: 'items.estado' },
-    { id: '00000000-0000-4000-8000-000000000019', parent_id: null, titulo: 'Dashboard',      icono: 'layout-dashboard', ruta: '/dashboard',         orden: 3, permiso_codigo: null },
-    { id: '00000000-0000-4000-8000-000000000003', parent_id: null, titulo: 'Administración',  icono: 'user-cog',      ruta: null,                   orden: 3, permiso_codigo: null },
-    { id: 'cc306641-6ab2-4bfa-814f-528c4cbe2a65', parent_id: null, titulo: 'Principal',      icono: 'utensils',      ruta: null,                   orden: 1, permiso_codigo: null },
-    { id: '00000000-0000-4000-8000-000000000010', parent_id: null, titulo: 'Configuraciones', icono: 'settings',      ruta: null,                   orden: 4, permiso_codigo: null },
-
-    // Hijos de Administración
-    { id: '9f3f836b-82f0-452f-b524-5e3bc54e4318', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Mesas',      icono: 'table',         ruta: '/admin/mesas',        orden: 1,  permiso_codigo: 'mesas.administrar' },
-    { id: '00000000-0000-4000-8000-000000000005', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Combos',     icono: 'gift',          ruta: '/admin/combos',       orden: 2,  permiso_codigo: null },
-    { id: '00000000-0000-4000-8000-000000000004', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Productos',  icono: 'package',       ruta: '/admin/productos',    orden: 3,  permiso_codigo: 'productos.ver' },
-    { id: '00000000-0000-4000-8000-000000000013', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Reportes',   icono: 'file-text',     ruta: '/admin/reportes',     orden: 4,  permiso_codigo: null },
-    { id: '00000000-0000-4000-8000-000000000008', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Caja',       icono: 'dollar-sign',   ruta: '/admin/caja',         orden: 5,  permiso_codigo: 'caja.historial' },
-    { id: '00000000-0000-4000-8000-000000000009', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Clientes',   icono: 'users',         ruta: '/admin/clientes',     orden: 6,  permiso_codigo: 'clientes.ver' },
-    { id: '00000000-0000-4000-8000-000000000012', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Impresoras', icono: 'printer',       ruta: '/admin/impresoras',   orden: 7,  permiso_codigo: 'impresion.configurar' },
-    { id: '00000000-0000-4000-8000-000000000014', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Inventario', icono: 'clipboard-list', ruta: '/admin/inventario',   orden: 8,  permiso_codigo: 'inventario.ver' },
-    { id: '00000000-0000-4000-8000-000000000015', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Recetas',    icono: 'book-open',      ruta: '/admin/recetas',      orden: 9,  permiso_codigo: 'recetas.ver' },
-    { id: '00000000-0000-4000-8000-000000000016', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Rentabilidad', icono: 'trending-up',  ruta: '/admin/rentabilidad',        orden: 10, permiso_codigo: 'rentabilidad.ver' },
-    { id: '00000000-0000-4000-8000-000000000017', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Costos',      icono: 'dollar-sign', ruta: '/admin/reportes/costos', orden: 11, permiso_codigo: 'costos.ver' },
-    { id: '00000000-0000-4000-8000-000000000018', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Cuentas',     icono: 'receipt',     ruta: '/admin/cuentas',         orden: 12, permiso_codigo: 'ordenes.ver' },
-    { id: '00000000-0000-4000-8000-000000000020', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Restaurante', icono: 'store',       ruta: '/admin/restaurante',     orden: 15, permiso_codigo: null },
-    { id: '00000000-0000-4000-8000-000000000021', parent_id: '00000000-0000-4000-8000-000000000003', titulo: 'Promociones', icono: 'tag',         ruta: '/admin/promociones',     orden: 16, permiso_codigo: null },
-    // NOTA (077): el menú "Empresas" (/admin/empresas) se eliminó del POS —
-    // el alta de empresas vive solo en el DTE Frontend (decisión 2026-10-07).
-
-    // Hijos de Configuraciones
-    { id: '00000000-0000-4000-8000-000000000011', parent_id: '00000000-0000-4000-8000-000000000010', titulo: 'Menú',           icono: 'menu',   ruta: '/configuraciones/menus', orden: 1, permiso_codigo: 'roles.configurar' },
-    { id: '00000000-0000-4000-8000-000000000007', parent_id: '00000000-0000-4000-8000-000000000010', titulo: 'Roles y Permisos', icono: 'shield', ruta: '/configuraciones/roles', orden: 2, permiso_codigo: 'roles.configurar' },
-    { id: '00000000-0000-4000-8000-000000000006', parent_id: '00000000-0000-4000-8000-000000000010', titulo: 'Usuarios',        icono: 'users',  ruta: '/configuraciones/usuarios', orden: 4, permiso_codigo: 'usuarios.ver' },
-  ];
-
-  for (const m of menus) {
-    await query(
-      `INSERT INTO menus (id, tenant_id, parent_id, titulo, icono, ruta, orden, permiso_codigo)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (id) DO UPDATE SET
-         titulo = EXCLUDED.titulo,
-         icono = EXCLUDED.icono,
-         ruta = EXCLUDED.ruta,
-         orden = EXCLUDED.orden,
-         permiso_codigo = EXCLUDED.permiso_codigo`,
-      [m.id, tenantId, m.parent_id, m.titulo, m.icono, m.ruta, m.orden, m.permiso_codigo]
-    );
-  }
-
-  logger.info('Menús default sembrados para tenant', { tenant_id: tenantId, menus: menus.length });
-};
+//
+// NOTA (migración 080, 2026-10-16): los menús del sidebar son un catálogo
+// GLOBAL (tabla `menus` sin `tenant_id`), no varían por empresa y los crea la
+// migración. El seed ya NO siembra menús por tenant.
 
 // ─────────────────────────────
 const sembrarUsuariosExtra = async (tenantId, sucursalId) => {
@@ -172,8 +121,7 @@ const ejecutarSeed = async () => {
   // 4. Sembrar permisos default para los 5 roles del tenant demo (siempre, idempotente)
   await sembrarPermisosTenant(TENANT_ID);
 
-  // 5. Sembrar menús default del sidebar (siempre, idempotente)
-  await sembrarMenusTenant(TENANT_ID);
+  // 5. Menús del sidebar: catálogo GLOBAL (migración 080) — no se siembran por tenant.
 
   // 6. Sembrar catálogos default (siempre, idempotente)
   await query('CALL sp_sembrar_catalogos_tenant($1)', [TENANT_ID]);
@@ -202,4 +150,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { sembrarPermisosTenant, sembrarMenusTenant, sembrarUsuariosExtra };
+module.exports = { sembrarPermisosTenant, sembrarUsuariosExtra };

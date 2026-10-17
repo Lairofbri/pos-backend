@@ -10,6 +10,8 @@ export const crearMenuSchema = Joi.object({
   parent_id: Joi.string().uuid().optional().allow(null),
   orden: Joi.number().integer().min(0).optional().default(0),
   permiso_codigo: Joi.string().max(100).optional().allow('', null),
+  // Ítems de mantenimiento de la plataforma (p. ej. "Menú").
+  solo_plataforma: Joi.boolean().optional().default(false),
 });
 
 export type CrearMenuBody = {
@@ -19,4 +21,5 @@ export type CrearMenuBody = {
   parent_id?: string | null;
   orden?: number;
   permiso_codigo?: string | null;
+  solo_plataforma?: boolean;
 };

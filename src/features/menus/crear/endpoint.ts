@@ -1,9 +1,11 @@
 import { Router } from 'express';
-import { requierePermiso } from '../../../shared/middlewares/permisos.middleware.js';
+import { requiereRol } from '../../../shared/middlewares/role.middleware.js';
 import { handler } from './handler.js';
 
 const router = Router({ mergeParams: true });
 
-router.post('/menus', requierePermiso('menus.crear'), handler);
+// Los menús son un catálogo GLOBAL (aplica a todas las empresas): su
+// mantenimiento queda reservado al rol plataforma (decisión 2026-10-16).
+router.post('/menus', requiereRol('plataforma'), handler);
 
 export default router;

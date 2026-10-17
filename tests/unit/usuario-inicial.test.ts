@@ -36,6 +36,7 @@ const crearDbFake = () => {
   const idempotencia = new Map<string, { status: number; body: Record<string, unknown> }>();
   const tenants = new Set<string>();
   const usuarios = new Map<string, UsuarioRow>();
+  const siembras: string[] = [];
   let siguiente = 1;
 
   const query = async (text: string, params: unknown[] = []) => {
@@ -47,6 +48,16 @@ const crearDbFake = () => {
     }
     if (sql.includes('INSERT INTO idempotency_keys')) {
       idempotencia.set(`${params[0]}|${params[1]}`, JSON.parse(params[3] as string));
+      return { rows: [] };
+    }
+
+    if (sql.startsWith('INSERT INTO tenants')) {
+      tenants.add(params[0] as string);
+      return { rows: [] };
+    }
+
+    if (sql.startsWith('CALL sp_sembrar_')) {
+      siembras.push(sql.slice('CALL '.length).replace('($1)', ''));
       return { rows: [] };
     }
 
@@ -96,6 +107,7 @@ const crearDbFake = () => {
     proyectarTenant: (tenantId: string) => tenants.add(tenantId),
     obtenerUsuario: (tenantId: string, email: string) => usuarios.get(`${tenantId}|${email}`),
     contarUsuarios: () => usuarios.size,
+    siembras: () => [...siembras],
   };
 };
 
@@ -114,6 +126,39 @@ const eventoBase = (sobre = {}) => ({
   tenantId: TENANT,
   payload: payloadBase(),
   ...sobre,
+});
+
+test('TENANT_CREADO proyecta el tenant y siembra permisos y catálogos (onboarding del POS)', async () => {
+  const db = crearDbFake();
+  const servicio = crearServicioEventosProvisionFactory({ db });
+
+  const resultado = await servicio.recibirEvento({
+    operationId: OPERATION,
+    tipoEvento: 'TENANT_CREADO',
+    tenantId: TENANT,
+    payload: {
+      nombre: 'COPY SERVITEC SOCIEDAD ANONIMA DE CAPITAL VARIABLE',
+      nombre_comercial: 'COPY SERVITEC',
+      nit: '0623-271125-102-2',
+      nrc: '3765751',
+    },
+  });
+
+  assert.equal(resultado.status, 200);
+  assert.deepEqual(
+    db.siembras(),
+    ['sp_sembrar_permisos_tenant', 'sp_sembrar_catalogos_tenant'],
+    'sin la siembra la empresa nueva queda sin permisos ni catálogos (riesgo 3); los menús son globales (080)'
+  );
+
+  // El tenant queda proyectado: USUARIO_INICIAL ya no falla con 409.
+  // (El DTE usa un operation_id distinto por tipo de evento; reutilizar el de
+  // TENANT_CREADO haría que la idempotencia descarte el evento.)
+  const usuario = await servicio.recibirEvento(
+    eventoBase({ operationId: 'c0000000-0000-4000-8000-000000000009' })
+  );
+  assert.equal(usuario.status, 200);
+  assert.ok(db.obtenerUsuario(TENANT, EMAIL));
 });
 
 test('USUARIO_INICIAL crea el usuario administrador del tenant (rol administrador = matriz completa)', async () => {

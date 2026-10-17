@@ -5,10 +5,7 @@ import { logger } from '../../../shared/utils/logger.js';
 
 export async function handler(req: Request, res: Response) {
   try {
-    const menu = await obtenerMenu({
-      tenantId: req.usuario!.tenant_id,
-      menuId: req.params.id as string,
-    });
+    const menu = await obtenerMenu({ menuId: req.params.id as string });
     return exito(res, { menu });
   } catch (err) {
     const e = err as { status?: number; mensaje?: string };

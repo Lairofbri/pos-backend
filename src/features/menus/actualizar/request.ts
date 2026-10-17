@@ -8,6 +8,7 @@ export const actualizarMenuSchema = Joi.object({
   orden: Joi.number().integer().min(0).optional(),
   permiso_codigo: Joi.string().max(100).optional().allow('', null),
   activo: Joi.boolean().optional(),
+  solo_plataforma: Joi.boolean().optional(),
 }).min(1);
 
 export type ActualizarMenuBody = {
@@ -18,4 +19,5 @@ export type ActualizarMenuBody = {
   orden?: number;
   permiso_codigo?: string | null;
   activo?: boolean;
+  solo_plataforma?: boolean;
 };

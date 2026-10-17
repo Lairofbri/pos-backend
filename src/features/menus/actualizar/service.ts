@@ -11,10 +11,14 @@ type MenuRow = {
   activo: boolean;
 };
 
-export const actualizarMenu = async ({ tenantId, menuId, datos }: { tenantId: string; menuId: string; datos: Record<string, unknown> }) => {
+/**
+ * Edición de un ítem del catálogo GLOBAL de menús (aplica a todas las
+ * empresas). Solo el rol `plataforma` llega hasta aquí (endpoint).
+ */
+export const actualizarMenu = async ({ menuId, datos }: { menuId: string; datos: Record<string, unknown> }) => {
   const { rows: existentes } = await query(
-    'SELECT id FROM menus WHERE id = $1 AND tenant_id = $2',
-    [menuId, tenantId]
+    'SELECT id FROM menus WHERE id = $1',
+    [menuId]
   );
   if (existentes.length === 0) {
     throw { status: 404, mensaje: 'Menú no encontrado.' };
@@ -25,8 +29,8 @@ export const actualizarMenu = async ({ tenantId, menuId, datos }: { tenantId: st
       throw { status: 400, mensaje: 'Un menú no puede ser padre de sí mismo.' };
     }
     const { rows: parentRows } = await query(
-      'SELECT id FROM menus WHERE id = $1 AND tenant_id = $2',
-      [datos.parent_id, tenantId]
+      'SELECT id FROM menus WHERE id = $1',
+      [datos.parent_id]
     );
     if (parentRows.length === 0) {
       throw { status: 404, mensaje: 'El menú padre indicado no existe.' };
@@ -43,10 +47,10 @@ export const actualizarMenu = async ({ tenantId, menuId, datos }: { tenantId: st
     idx++;
   }
 
-  valores.push(menuId, tenantId);
+  valores.push(menuId);
   const { rows } = await query(
     `UPDATE menus SET ${campos.join(', ')}
-     WHERE id = $${idx} AND tenant_id = $${idx + 1}
+     WHERE id = $${idx}
      RETURNING id, parent_id, titulo, icono, ruta, orden, permiso_codigo, activo`,
     valores
   );

@@ -5,10 +5,7 @@ import { logger } from '../../../shared/utils/logger.js';
 
 export async function handler(req: Request, res: Response) {
   try {
-    await desactivarMenu({
-      tenantId: req.usuario!.tenant_id,
-      menuId: req.params.id as string,
-    });
+    await desactivarMenu({ menuId: req.params.id as string });
     return exito(res, null, 'Menú desactivado exitosamente.');
   } catch (err) {
     const e = err as { status?: number; mensaje?: string };

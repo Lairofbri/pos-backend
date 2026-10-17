@@ -10,7 +10,6 @@ export async function handler(req: Request, res: Response) {
 
   try {
     const menu = await actualizarMenu({
-      tenantId: req.usuario!.tenant_id,
       menuId: req.params.id as string,
       datos: value,
     });

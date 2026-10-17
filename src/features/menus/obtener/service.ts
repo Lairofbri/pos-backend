@@ -11,12 +11,13 @@ type MenuRow = {
   activo: boolean;
 };
 
-export const obtenerMenu = async ({ tenantId, menuId }: { tenantId: string; menuId: string }) => {
+/** Ítem del catálogo GLOBAL de menús (aplica a todas las empresas). */
+export const obtenerMenu = async ({ menuId }: { menuId: string }) => {
   const { rows } = await query(
     `SELECT id, parent_id, titulo, icono, ruta, orden, permiso_codigo, activo
      FROM menus
-     WHERE id = $1 AND tenant_id = $2`,
-    [menuId, tenantId]
+     WHERE id = $1`,
+    [menuId]
   );
 
   if (rows.length === 0) {

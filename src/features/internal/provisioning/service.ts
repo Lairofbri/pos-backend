@@ -43,6 +43,24 @@ type PayloadUsuarioInicial = {
 const crearServicioEventosProvision = (dependencias: { db?: { query: typeof query } } = {}) => {
   const db = dependencias.db || { query };
 
+  /**
+   * Onboarding del POS para un tenant nuevo (riesgo 3 del análisis «DTE única
+   * fuente de verdad»): sin esto la empresa queda **con todos los permisos
+   * denegados y sin catálogos operativos**.
+   *
+   * Los MENÚS no se siembran: `menus` es un catálogo GLOBAL compartido por
+   * todas las empresas (decisión del propietario 2026-10-16, migración 080).
+   * Lo que sí es por tenant son los PERMISOS (rol_permisos) y los catálogos.
+   *
+   * Las funciones son idempotentes (ON CONFLICT), así que re-entregar
+   * `TENANT_CREADO` también repara tenants creados antes de esta corrección
+   * (p. ej. al usar «Reintentar sync» en el DTE).
+   */
+  const sembrarOnboardingTenant = async (tenantId: string) => {
+    await db.query('CALL sp_sembrar_permisos_tenant($1)', [tenantId]);
+    await db.query('CALL sp_sembrar_catalogos_tenant($1)', [tenantId]);
+  };
+
   const recibirEvento = async ({
     operationId,
     tipoEvento,
@@ -78,6 +96,11 @@ const crearServicioEventosProvision = (dependencias: { db?: { query: typeof quer
            last_fiscal_sync_at = NOW()`,
         [tenantId, p.nombre, p.nombre_comercial || p.nombre, p.nit, p.nrc || null, p.email || null]
       );
+
+      // Onboarding operativo del tenant: permisos por rol (matriz completa del
+      // rol `administrador`) y catálogos. Los menús del sidebar son globales
+      // (migración 080) y no se siembran por tenant.
+      await sembrarOnboardingTenant(tenantId);
     }
 
     if (tipoEvento === 'BRANCH_VINCULADO') {
