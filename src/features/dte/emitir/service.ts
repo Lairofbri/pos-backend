@@ -25,6 +25,89 @@ const buscarCodigoMuni = async (nombre: string, deptoCod: string): Promise<strin
   return rows[0]?.codigo || null;
 };
 
+/**
+ * F6 — ¿la orden trae datos de ubicación del receptor?
+ *
+ * Solo se envía la ubicación cuando hay calle o departamento/municipio del
+ * cliente. Sin datos NO se inventa una dirección: el DTE deja `direccion: null`
+ * en el FCF (válido en el esquema oficial) y aplica sus propios defaults en
+ * CCF/NC/ND/FSE, donde la dirección es obligatoria.
+ */
+export const necesitaUbicacionReceptor = (orden: OrdenRow) =>
+  Boolean(orden.cliente_direccion || (orden.departamento && orden.municipio));
+
+const resolverUbicacionReceptor = async (
+  orden: OrdenRow
+): Promise<{ departamento_cod?: string; municipio_cod?: string }> => {
+  if (!necesitaUbicacionReceptor(orden)) return {};
+
+  // Defaults de San Salvador solo cuando hay calle pero no departamento/
+  // municipio resoluble (comportamiento histórico del POS).
+  let deptoCod = '06';
+  let muniCod = '20';
+  if (orden.departamento && orden.municipio) {
+    const dCod = await buscarCodigoDepto(orden.departamento as string);
+    if (dCod) {
+      deptoCod = dCod;
+      const mCod = await buscarCodigoMuni(orden.municipio as string, dCod);
+      if (mCod) muniCod = mCod;
+    }
+  }
+  return { departamento_cod: deptoCod, municipio_cod: muniCod };
+};
+
+/**
+ * F6 — receptor del DTE (puro, exportado para tests).
+ *
+ * FCF (01): tipoDocumento + numDocumento (Consumidor Final si la orden no trae
+ * cliente). CCF (03): NIT/NRC + actividad económica. FSE (14): NIT.
+ */
+export const construirReceptorFiscal = ({
+  tipoDte,
+  orden,
+  ubicacion,
+  codActividad,
+  descActividad,
+}: {
+  tipoDte: string;
+  orden: OrdenRow;
+  ubicacion: { departamento_cod?: string; municipio_cod?: string };
+  codActividad?: string | null;
+  descActividad?: string | null;
+}) => {
+  let receptor: Record<string, unknown>;
+
+  if (tipoDte === '01') {
+    const tipoDoc = ((orden.tipo_documento as string) || '').toLowerCase();
+    receptor = {
+      nombre: orden.cliente_nombre
+        ? `${orden.cliente_nombre}${orden.cliente_apellido ? ' ' + orden.cliente_apellido : ''}`
+        : 'Consumidor Final',
+      tipo_documento: MAPA_TIPO_DOC[tipoDoc] || '37',
+      num_documento: (orden.numero_documento as string) || '000000',
+    };
+  } else if (tipoDte === '03') {
+    receptor = {
+      nit: orden.cliente_nit,
+      nrc: orden.cliente_nrc || null,
+      nombre: (orden.cliente_nombre as string) || 'Consumidor Final',
+      cod_actividad: codActividad || null,
+      desc_actividad: descActividad || null,
+    };
+  } else {
+    receptor = {
+      nit: orden.cliente_nit,
+      nombre: (orden.cliente_nombre as string) || 'Sujeto Excluido',
+    };
+  }
+
+  if (orden.cliente_telefono) receptor.telefono = orden.cliente_telefono;
+  if (orden.cliente_email) receptor.correo = orden.cliente_email;
+  if (orden.cliente_direccion) receptor.direccion = orden.cliente_direccion;
+
+  return { ...receptor, ...ubicacion };
+};
+
 const MAPA_METODO_MH: Record<string, string> = {
   efectivo: '01',
   tarjeta: '03',
@@ -129,6 +212,8 @@ const obtenerOrdenCompleta = async (tenantId: string, ordenId: string) => {
             c.tipo_documento, c.numero_documento,
             c.nit AS cliente_nit, c.nrc AS cliente_nrc,
             c.razon_social,
+            c.cod_actividad AS cliente_cod_actividad,
+            c.desc_actividad AS cliente_desc_actividad,
             c.direccion AS cliente_direccion, c.telefono AS cliente_telefono,
             c.email AS cliente_email, c.departamento, c.municipio
      FROM ordenes o
@@ -423,92 +508,50 @@ const sucursalFiscal = await obtenerContextoFiscalSucursal(tenantId, orden);
     tipoDte,
   });
 
-  let payload: Record<string, unknown>;
-
-  if (tipoDte === '01') {
-    const nombreReceptor = orden.cliente_nombre
-      ? `${orden.cliente_nombre}${orden.cliente_apellido ? ' ' + orden.cliente_apellido : ''}`
-      : 'Consumidor Final';
-
-    const tipoDoc = ((orden.tipo_documento as string) || '').toLowerCase();
-    const receptor: Record<string, unknown> = {
-      nombre: nombreReceptor,
-      tipo_documento: MAPA_TIPO_DOC[tipoDoc] || '37',
-      num_documento: (orden.numero_documento as string) || '000000',
-    };
-
-    if (orden.cliente_telefono) receptor.telefono = orden.cliente_telefono;
-    if (orden.cliente_email) receptor.correo = orden.cliente_email;
-    if (orden.cliente_direccion) receptor.direccion = orden.cliente_direccion;
-
-    let deptoCod = '06';
-    let muniCod = '20';
-    if (orden.departamento && orden.municipio) {
-      const dCod = await buscarCodigoDepto(orden.departamento as string);
-      if (dCod) {
-        deptoCod = dCod;
-        const mCod = await buscarCodigoMuni(orden.municipio as string, dCod);
-        if (mCod) muniCod = mCod;
-      }
-    }
-    receptor.departamento_cod = deptoCod;
-    receptor.municipio_cod = muniCod;
-
-    payload = { ...payloadBase, receptor };
-  } else if (tipoDte === '03') {
+  // F5/F6 — receptor del DTE.
+  //
+  // FCF (01): el receptor puede ir sin datos; el POS manda "Consumidor Final"
+  // cuando la orden no tiene cliente. CCF (03) y FSE (14) exigen NIT.
+  // El CCF exige además la actividad económica del receptor (esquema oficial:
+  // codActividad/descActividad obligatorios, mínimo 5 caracteres).
+  if (tipoDte === '03') {
     if (!orden.cliente_id || !orden.cliente_nit) {
       throw { status: 400, mensaje: 'CCF requiere un cliente con NIT registrado.' };
     }
-
-    const receptor: Record<string, unknown> = {
-      nit: orden.cliente_nit,
-      nrc: orden.cliente_nrc || null,
-      nombre: (orden.cliente_nombre as string) || 'Consumidor Final',
-    };
-
-    if (orden.cliente_telefono) receptor.telefono = orden.cliente_telefono;
-    if (orden.cliente_email) receptor.correo = orden.cliente_email;
-    if (orden.cliente_direccion) receptor.direccion = orden.cliente_direccion;
-
-    let deptoCod = '06';
-    let muniCod = '20';
-    if (orden.departamento && orden.municipio) {
-      const dCod = await buscarCodigoDepto(orden.departamento as string);
-      if (dCod) {
-        deptoCod = dCod;
-        const mCod = await buscarCodigoMuni(orden.municipio as string, dCod);
-        if (mCod) muniCod = mCod;
-      }
-    }
-    receptor.departamento_cod = deptoCod;
-    receptor.municipio_cod = muniCod;
-
-    payload = { ...payloadBase, receptor };
-  } else {
-    if (!orden.cliente_id || !orden.cliente_nit) {
-      throw { status: 400, mensaje: 'FSE requiere un cliente con NIT registrado.' };
-    }
-
-    const receptor: Record<string, unknown> = {
-      nit: orden.cliente_nit,
-      nombre: (orden.cliente_nombre as string) || 'Sujeto Excluido',
-    };
-
-    if (orden.cliente_telefono) receptor.telefono = orden.cliente_telefono;
-    if (orden.cliente_email) receptor.correo = orden.cliente_email;
-    if (orden.cliente_direccion) receptor.direccion = orden.cliente_direccion;
-
-    if (orden.departamento && orden.municipio) {
-      const dCod = await buscarCodigoDepto(orden.departamento as string);
-      if (dCod) {
-        receptor.departamento_cod = dCod;
-        const mCod = await buscarCodigoMuni(orden.municipio as string, dCod);
-        if (mCod) receptor.municipio_cod = mCod;
-      }
-    }
-
-    payload = { ...payloadBase, receptor };
+  } else if (tipoDte !== '01' && (!orden.cliente_id || !orden.cliente_nit)) {
+    throw { status: 400, mensaje: 'FSE requiere un cliente con NIT registrado.' };
   }
+
+  const codActividad = (orden.cliente_cod_actividad as string | null) || null;
+  const descActividad = (orden.cliente_desc_actividad as string | null) || null;
+
+  if (tipoDte === '03') {
+    if ((codActividad || '').trim().length < 5 || (descActividad || '').trim().length < 5) {
+      throw {
+        status: 400,
+        mensaje: 'El CCF requiere que el cliente tenga código y descripción de actividad económica (mínimo 5 caracteres). Completalos en el cliente antes de emitir.',
+      };
+    }
+    // El esquema oficial del CCF exige la ubicación fiscal del receptor
+    // (direccion como objeto). Sin departamento/municipio no se emite: se
+    // evita el 422 críptico del DTE con un mensaje accionable.
+    if (!orden.departamento || !orden.municipio) {
+      throw {
+        status: 400,
+        mensaje: 'El CCF requiere la ubicación fiscal del cliente (departamento y municipio). Completala en el cliente antes de emitir.',
+      };
+    }
+  }
+
+  const receptor = construirReceptorFiscal({
+    tipoDte,
+    orden,
+    ubicacion: await resolverUbicacionReceptor(orden),
+    codActividad,
+    descActividad,
+  });
+
+  const payload: Record<string, unknown> = { ...payloadBase, receptor };
 
   const endpoint = ENDPOINTS[tipoDte];
 
